@@ -1,0 +1,41 @@
+name: Deploy Gedosan-API
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-gedosan-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout codice
+        uses: actions/checkout@v4
+
+      - name: Build immagine e riavvio stack
+        env:
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
+        run: |
+          docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+          docker image prune -f --filter label=project=gedosan-api
+
+      - name: Verifica health
+        run: |
+          for i in $(seq 1 30); do
+            if docker inspect --format '{{.State.Health.Status}}' gedosan-api | grep -q healthy; then
+              echo "API healthy"; exit 0
+            fi
+            sleep 5
+          done
+          echo "API non healthy dopo il deploy"; docker compose -f docker-compose.prod.yml logs --tail 100 api; exit 1

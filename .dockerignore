@@ -1,0 +1,12 @@
+target/
+logs/
+.git/
+.idea/
+.mvn/wrapper/maven-wrapper.jar
+*.iml
+.env
+*.env
+!.env.example
+HELP.md
+README.md
+schema_dump.sql

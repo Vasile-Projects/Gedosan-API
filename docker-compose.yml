@@ -1,0 +1,29 @@
+# Ambiente di sviluppo/test locale.
+# Credenziali fittizie: valgono solo per questo MySQL usa-e-getta sulla tua macchina.
+# NON usato in produzione.
+#
+#   docker compose up -d      avvia MySQL vuoto
+#   ./mvnw spring-boot:run    avvia l'API: Flyway crea schema + dati demo
+#   docker compose down -v     ferma e cancella tutto
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: gedosan-db
+    environment:
+      MYSQL_DATABASE: donazioni_db
+      MYSQL_USER: gedosan
+      MYSQL_PASSWORD: gedosan_dev
+      MYSQL_ROOT_PASSWORD: root_dev
+    ports:
+      - "3306:3306"
+    volumes:
+      - gedosan_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  gedosan_db_data:
