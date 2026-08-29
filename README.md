@@ -91,8 +91,8 @@ Parametrizzabili tramite `application.properties` (prefisso `prenotazioni.*`):
 |---|---|---|
 | `orizzonte-giorni` | Giorni futuri massimi prenotabili | 60 |
 | `eta-minima` | Età minima per donare | 18 |
-| `intervallo-uomini-giorni` | Intervallo minimo tra donazioni (uomini) | 90 |
-| `intervallo-donne-giorni` | Intervallo minimo tra donazioni (donne) | 365 |
+| `intervallo-uomini-giorni` | Intervallo minimo tra donazioni (uomini) | 90 (max 4 volte in 365 giorni) |
+| `intervallo-donne-giorni` | Intervallo minimo tra donazioni (donne) | 90 (max 2 volte in 365 giorni) |
 | `posti-per-slot` | Prenotazioni massime per slot orario | 2 |
 
 Il codice fiscale non è validato solo nella forma: viene decodificato (gestendo anche l'omocodia) e confrontato con data di nascita e sesso dichiarati, rifiutando la prenotazione se non combaciano.
