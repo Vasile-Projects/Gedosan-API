@@ -3,6 +3,7 @@ package it.vszdev.gedosanapi.service;
 import it.vszdev.gedosanapi.dto.PrenotazioneRequest;
 import it.vszdev.gedosanapi.dto.admin.PrenotazioneAdminResponse;
 import it.vszdev.gedosanapi.enums.AzioneAdmin;
+import it.vszdev.gedosanapi.exception.RegolaPrenotazioneException;
 import it.vszdev.gedosanapi.exception.RisorsaNonTrovataException;
 import it.vszdev.gedosanapi.models.Admin;
 import it.vszdev.gedosanapi.models.Donatore;
@@ -29,6 +30,7 @@ public class AdminPrenotazioneService {
     private final PrenotazioneService prenotazioneService;
     private final PrenotazionePdfService prenotazionePdfService;
     private final TrasfusionaleService trasfusionaleService;
+    private final DonatoreService donatoreService;
 
     public AdminPrenotazioneService(PrenotazioneRepository prenotazioneRepository,
                                      SlotGiornalieroRepository slotGiornalieroRepository,
@@ -36,7 +38,8 @@ public class AdminPrenotazioneService {
                                      AdminRepository adminRepository,
                                      PrenotazioneService prenotazioneService,
                                      PrenotazionePdfService prenotazionePdfService,
-                                     TrasfusionaleService trasfusionaleService) {
+                                     TrasfusionaleService trasfusionaleService,
+                                     DonatoreService donatoreService) {
         this.prenotazioneRepository = prenotazioneRepository;
         this.slotGiornalieroRepository = slotGiornalieroRepository;
         this.logModificaPrenotazioneRepository = logModificaPrenotazioneRepository;
@@ -44,6 +47,7 @@ public class AdminPrenotazioneService {
         this.prenotazioneService = prenotazioneService;
         this.prenotazionePdfService = prenotazionePdfService;
         this.trasfusionaleService = trasfusionaleService;
+        this.donatoreService = donatoreService;
     }
 
     @Transactional(readOnly = true)
@@ -62,7 +66,7 @@ public class AdminPrenotazioneService {
 
     @Transactional
     public PrenotazioneAdminResponse crea(PrenotazioneRequest request) {
-        return new PrenotazioneAdminResponse(prenotazioneService.creaPrenotazione(request));
+        return new PrenotazioneAdminResponse(prenotazioneService.creaPrenotazione(request, true));
     }
 
     @Transactional
@@ -75,6 +79,11 @@ public class AdminPrenotazioneService {
             return new PrenotazioneAdminResponse(prenotazione);
         }
 
+        // Ordine di lock: prima il donatore, poi gli slot (stesso ordine del flusso di creazione),
+        // così una riprogrammazione e una prenotazione concorrenti sullo stesso donatore non aggirano
+        // il controllo dell'intervallo minimo.
+        donatoreService.bloccaPerPrenotazione(prenotazione.getDonatore().getId());
+
         // Lock in ordine di id crescente: evita il deadlock tra due riprogrammazioni che scambiano gli stessi slot in direzioni opposte.
         Long idPrimo = Math.min(idSlotVecchio, idSlotNuovo);
         Long idSecondo = Math.max(idSlotVecchio, idSlotNuovo);
@@ -85,12 +94,20 @@ public class AdminPrenotazioneService {
         SlotGiornaliero slotVecchio = idSlotVecchio.equals(idPrimo) ? slotPrimo : slotSecondo;
         SlotGiornaliero slotNuovo = idSlotNuovo.equals(idPrimo) ? slotPrimo : slotSecondo;
 
-        Donatore donatore = prenotazione.getDonatore();
-        prenotazioneService.validaSlotPrenotabile(slotNuovo, donatore, prenotazione.getId());
+        // Una riprogrammazione è "stesso centro, altra data/ora": lo spostamento tra centri diversi
+        // si fa annullando e ricreando la prenotazione.
+        if (!slotNuovo.getTrasfusionale().getId().equals(slotVecchio.getTrasfusionale().getId())) {
+            throw new RegolaPrenotazioneException("La riprogrammazione deve restare nello stesso centro trasfusionale. "
+                    + "Per spostare la donazione in un altro centro annulla la prenotazione e creane una nuova.");
+        }
 
-        slotVecchio.setPostiOccupati(slotVecchio.getPostiOccupati() - 1);
-        slotNuovo.setPostiOccupati(slotNuovo.getPostiOccupati() + 1);
+        Donatore donatore = prenotazione.getDonatore();
+        prenotazioneService.ricalcolaPostiOccupati(slotNuovo);
+        prenotazioneService.validaSlotPrenotabile(slotNuovo, donatore, prenotazione.getId(), true);
+
         prenotazione.setSlotGiornaliero(slotNuovo);
+        prenotazioneService.ricalcolaPostiOccupati(slotVecchio);
+        prenotazioneService.ricalcolaPostiOccupati(slotNuovo);
 
         registraLog(idAdmin, AzioneAdmin.RIPROGRAMMAZIONE, prenotazione, idSlotVecchio, idSlotNuovo);
 
@@ -102,11 +119,11 @@ public class AdminPrenotazioneService {
         Prenotazione prenotazione = trovaPrenotazione(id);
 
         SlotGiornaliero slot = bloccaSlot(prenotazione.getSlotGiornaliero().getId());
-        slot.setPostiOccupati(slot.getPostiOccupati() - 1);
 
         registraLog(idAdmin, AzioneAdmin.CANCELLAZIONE, prenotazione, slot.getId(), null);
 
         prenotazioneRepository.delete(prenotazione);
+        prenotazioneService.ricalcolaPostiOccupati(slot);
     }
 
     @Transactional(readOnly = true)

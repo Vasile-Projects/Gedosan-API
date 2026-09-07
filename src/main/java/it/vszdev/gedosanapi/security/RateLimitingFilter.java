@@ -34,6 +34,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             boolean consentito = switch (percorso) {
                 case LOGIN -> rateLimiterService.tryConsumeLogin(chiave);
                 case PRENOTAZIONE -> rateLimiterService.tryConsumePrenotazione(chiave);
+                case CONSULTAZIONE -> rateLimiterService.tryConsumeConsultazione(chiave);
                 case NESSUNO -> true;
             };
 
@@ -56,16 +57,24 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     }
 
     private Percorso classificaPercorso(HttpServletRequest request) {
-        if (!"POST".equalsIgnoreCase(request.getMethod())) {
+        String metodo = request.getMethod();
+        String uri = request.getRequestURI();
+
+        if ("POST".equalsIgnoreCase(metodo)) {
+            if ("/api/auth/login".equals(uri)) {
+                return Percorso.LOGIN;
+            }
+            if ("/api/prenotazioni".equals(uri)) {
+                return Percorso.PRENOTAZIONE;
+            }
             return Percorso.NESSUNO;
         }
-        String uri = request.getRequestURI();
-        if ("/api/auth/login".equals(uri)) {
-            return Percorso.LOGIN;
+
+        if ("GET".equalsIgnoreCase(metodo)
+                && (uri.equals("/api/trasfusionali") || uri.startsWith("/api/trasfusionali/"))) {
+            return Percorso.CONSULTAZIONE;
         }
-        if ("/api/prenotazioni".equals(uri)) {
-            return Percorso.PRENOTAZIONE;
-        }
+
         return Percorso.NESSUNO;
     }
 
@@ -78,6 +87,6 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     }
 
     private enum Percorso {
-        LOGIN, PRENOTAZIONE, NESSUNO
+        LOGIN, PRENOTAZIONE, CONSULTAZIONE, NESSUNO
     }
 }

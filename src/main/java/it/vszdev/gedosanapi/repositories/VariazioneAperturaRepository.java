@@ -15,4 +15,8 @@ public interface VariazioneAperturaRepository extends JpaRepository<VariazioneAp
     List<VariazioneApertura> findAllByTrasfusionale_IdOrderByDataVariazioneDesc(Long idTrasfusionale);
 
     List<VariazioneApertura> findAllByOrderByDataVariazioneDesc();
+
+    // Tutte le variazioni di un centro in un intervallo di date (estremi inclusi). Usato per il
+    // riepilogo dei giorni di chiusura dell'anno.
+    List<VariazioneApertura> findAllByTrasfusionale_IdAndDataVariazioneBetween(Long idTrasfusionale, LocalDate da, LocalDate a);
 }

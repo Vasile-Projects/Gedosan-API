@@ -54,7 +54,7 @@ public class EmailService {
         return """
                 Gentile %s,
 
-                la tua prenotazione per una donazione di %s è confermata.
+                la tua prenotazione per una donazione di sangue intero è confermata.
 
                 Centro trasfusionale: %s
                 Indirizzo: %s, %d
@@ -65,7 +65,6 @@ public class EmailService {
                 Ti aspettiamo, grazie per il tuo gesto di solidarietà.
                 """.formatted(
                 payload.nomeDonatore(),
-                payload.tipoDonazione(),
                 payload.nomeTrasfusionale(),
                 payload.indirizzoTrasfusionale(),
                 payload.civicoTrasfusionale(),

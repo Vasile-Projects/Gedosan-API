@@ -11,6 +11,9 @@ public record PrenotazioneResponse(
         String nomeDonatore,
         String cognomeDonatore,
         String nomeTrasfusionale,
+        String indirizzoTrasfusionale,
+        Integer civicoTrasfusionale,
+        String telefonoTrasfusionale,
         LocalDate dataPrenotazione,
         LocalTime orarioPrenotazione,
         TipoDonazione tipoDonazione
@@ -21,6 +24,9 @@ public record PrenotazioneResponse(
                 p.getDonatore().getNome(),
                 p.getDonatore().getCognome(),
                 p.getSlotGiornaliero().getTrasfusionale().getNome(),
+                p.getSlotGiornaliero().getTrasfusionale().getIndirizzo(),
+                p.getSlotGiornaliero().getTrasfusionale().getCivico(),
+                p.getSlotGiornaliero().getTrasfusionale().getTelefono(),
                 p.getSlotGiornaliero().getData(),
                 p.getSlotGiornaliero().getOrario().getOrario(),
                 p.getTipoDonazione()

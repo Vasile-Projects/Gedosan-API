@@ -27,24 +27,18 @@ public class GlobalExceptionHandler {
     private record StatoErrore(HttpStatus stato, String titolo) {
     }
 
-    private static final Map<Class<? extends RuntimeException>, StatoErrore> ERRORI_APPLICATIVI = Map.of(
-            CredenzialiNonValideException.class, new StatoErrore(HttpStatus.UNAUTHORIZED, "Non autorizzato"),
-            RisorsaNonTrovataException.class, new StatoErrore(HttpStatus.NOT_FOUND, "Risorsa non trovata"),
-            SlotEsauritoException.class, new StatoErrore(HttpStatus.CONFLICT, "Slot esaurito"),
-            GiornoChiusoException.class, new StatoErrore(HttpStatus.CONFLICT, "Giorno non disponibile"),
-            EtaNonValidaException.class, new StatoErrore(HttpStatus.CONFLICT, "Età non valida"),
-            IntervalloNonRispettatoException.class, new StatoErrore(HttpStatus.CONFLICT, "Intervallo non rispettato"),
-            EmailAssociataAdAltroDonatoreException.class, new StatoErrore(HttpStatus.CONFLICT, "Email non coerente")
+    private static final Map<Class<? extends RuntimeException>, StatoErrore> ERRORI_APPLICATIVI = Map.ofEntries(
+            Map.entry(CredenzialiNonValideException.class, new StatoErrore(HttpStatus.UNAUTHORIZED, "Non autorizzato")),
+            Map.entry(RichiestaNonValidaException.class, new StatoErrore(HttpStatus.BAD_REQUEST, "Richiesta non valida")),
+            Map.entry(RisorsaNonTrovataException.class, new StatoErrore(HttpStatus.NOT_FOUND, "Risorsa non trovata")),
+            Map.entry(RegolaPrenotazioneException.class, new StatoErrore(HttpStatus.CONFLICT, "Prenotazione non consentita"))
     );
 
     @ExceptionHandler({
             CredenzialiNonValideException.class,
+            RichiestaNonValidaException.class,
             RisorsaNonTrovataException.class,
-            SlotEsauritoException.class,
-            GiornoChiusoException.class,
-            EtaNonValidaException.class,
-            IntervalloNonRispettatoException.class,
-            EmailAssociataAdAltroDonatoreException.class
+            RegolaPrenotazioneException.class
     })
     public ResponseEntity<Errore> gestisciErroreApplicativo(RuntimeException ex, HttpServletRequest request) {
         StatoErrore statoErrore = ERRORI_APPLICATIVI.get(ex.getClass());
@@ -103,8 +97,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Errore> gestisciVincoloDb(DataIntegrityViolationException ex, HttpServletRequest request) {
         log.warn("Violazione di un vincolo del database su {}", request.getRequestURI(), ex);
-        return costruisciErrore(HttpStatus.CONFLICT, "Conflitto dati",
-                "Operazione non consentita: dato duplicato", request);
+        String causa = ex.getMostSpecificCause().getMessage();
+        boolean vincoloDiValore = causa != null && causa.toLowerCase().contains("check constraint");
+        String messaggio = vincoloDiValore
+                ? "Uno o più dati inviati non rispettano i vincoli previsti"
+                : "Operazione non consentita: dato duplicato";
+        return costruisciErrore(HttpStatus.CONFLICT, "Conflitto dati", messaggio, request);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

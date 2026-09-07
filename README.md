@@ -62,10 +62,10 @@ security/     JwtAuthFilter, JwtService, rate limiting, AdminPrincipal
 validation/   validatori custom (Codice Fiscale e sua coerenza con l'anagrafica)
 exception/    eccezioni di dominio e GlobalExceptionHandler
 events/       evento + listener per l'invio email asincrono dopo una prenotazione
-config/       SecurityConfig, CorsConfig, proprietà applicative, AsyncConfig
+config/       SecurityConfig, CorsConfig, proprietà applicative, AsyncConfig, TimeConfig (bean Clock)
 ```
 
-Le regole di validazione delle prenotazioni (età minima, intervallo tra donazioni, apertura del centro, disponibilità dello slot) sono centralizzate in `PrenotazioneService` e applicate identicamente sia al flusso pubblico che a quello amministrativo, senza eccezioni per gli operatori.
+Le regole di validazione delle prenotazioni (finestra temporale e anticipo minimo, età minima, intervallo tra donazioni, limite annuo per le donatrici, apertura del centro, disponibilità dello slot) sono centralizzate in `PrenotazioneService` e applicate identicamente sia al flusso pubblico che a quello amministrativo, con la sola eccezione dell'anticipo minimo (non richiesto agli operatori, che restano comunque vincolati a non prenotare slot già passati).
 
 ### Flusso di prenotazione (donatore)
 
@@ -81,10 +81,10 @@ sequenceDiagram
     API-->>D: elenco slot con postiLiberi
 
     D->>API: POST /api/prenotazioni (anagrafica + idSlot)
-    API->>API: valida CF, età, intervallo tra donazioni
-    API->>DB: SELECT ... FOR UPDATE sullo slot
+    API->>API: valida CF, finestra temporale + anticipo, età, intervallo, limite annuo donne
+    API->>DB: SELECT ... FOR UPDATE su donatore, poi sullo slot
     alt slot con posti liberi e centro aperto
-        API->>DB: crea donatore (se nuovo) + prenotazione
+        API->>DB: crea donatore (se nuovo) + prenotazione, ricalcola posti_occupati
         API-->>D: 201 Created (PrenotazioneResponse)
         API-)SMTP: email di conferma (asincrona, AFTER_COMMIT)
         SMTP-->>DB: esito salvato in log_email
@@ -109,9 +109,9 @@ erDiagram
 |---|---|
 | `trasfusionali` | Centri di raccolta. |
 | `orari_validi` | Fasce orarie ammesse (PK sull'orario), condivise da tutti i centri. |
-| `slot_giornalieri` | Slot concreto = centro + orario + data, con `posti_occupati` (0–2). Creato on-demand alla prima prenotazione utile e ripulito da un job schedulato quando obsoleto. Unico per `(id_centro, ora, data)`. |
+| `slot_giornalieri` | Slot concreto = centro + orario + data, con `posti_occupati` (0–2, vincolo `chk_slot_posti`, ricalcolato dal numero reale di prenotazioni a ogni modifica). Creato on-demand alla prima prenotazione utile e ripulito da un job schedulato quando obsoleto. Unico per `(id_centro, ora, data)`. |
 | `donatori` | Anagrafica donatore, con `codice_fiscale` ed `email` univoci. Creata al volo alla prima prenotazione. |
-| `prenotazioni` | Associazione donatore ↔ slot. |
+| `prenotazioni` | Associazione donatore ↔ slot, unica per `(id_donatore, id_slot)`. |
 | `festivi_ricorrenti` | Festivi a data fissa (mese/giorno), centro-indipendenti. |
 | `variazioni_apertura` | Override straordinari di apertura/chiusura per centro e data. |
 | `log_email` | Esito (`OK`/`KO`) di ogni tentativo di invio email, con eventuale errore. |
@@ -125,22 +125,34 @@ Le regole principali sono parametrizzabili tramite `application.properties` (pre
 
 | Proprietà | Descrizione | Default |
 |---|---|---|
-| `prenotazioni.orizzonte-giorni` | Numero massimo di giorni futuri prenotabili | 60 |
+| `prenotazioni.orizzonte-giorni` | Numero massimo di giorni futuri prenotabili (limite superiore, ~1 anno) | 365 |
+| `prenotazioni.anticipo-minimo-minuti` | Anticipo minimo tra il momento della prenotazione e l'inizio dello slot (solo flusso donatore) | 90 |
 | `prenotazioni.eta-minima` | Età minima richiesta per donare | 18 |
+| `prenotazioni.eta-massima` | Età massima ammessa per prenotare online (oltre, valutazione del trasfusionale) | 65 |
 | `prenotazioni.intervallo-uomini-giorni` | Intervallo minimo tra due donazioni per donatori uomini | 90 |
-| `prenotazioni.intervallo-donne-giorni` | Intervallo minimo tra due donazioni per donatrici donne | 365 |
-| `prenotazioni.distanza-minima-donne-giorni` | Distanza minima aggiuntiva per le donne | 90 |
-| `prenotazioni.posti-per-slot` | Numero massimo di prenotazioni per ogni slot orario | 2 |
+| `prenotazioni.distanza-minima-donne-giorni` | Intervallo minimo tra due donazioni per donatrici donne | 90 |
+| `prenotazioni.finestra-limite-donne-giorni` | Ampiezza della finestra mobile per il limite di donazioni delle donne | 365 |
+| `prenotazioni.max-donazioni-donne-per-finestra` | Numero massimo di donazioni di una donatrice in ogni finestra mobile | 2 |
+| `prenotazioni.posti-per-slot` | Numero massimo di prenotazioni per ogni slot orario. Vincolato a `[1, 2]` (`@Max(2)`) in coerenza con il `CHECK chk_slot_posti`: un valore fuori range blocca l'avvio. Per superare 2 serve una migrazione che aggiorni anche il vincolo DB | 2 |
 
-Ulteriori vincoli applicati automaticamente:
+Ulteriori vincoli applicati automaticamente, identici per flusso donatore e amministrativo (l'unica differenza è che l'admin non è soggetto all'anticipo minimo, ma non può comunque prenotare uno slot già passato):
 
-- Il centro trasfusionale deve risultare aperto nella data richiesta (calendario ordinario + festivi ricorrenti + variazioni di apertura straordinarie).
-- Lo slot selezionato viene bloccato a livello di riga (`SELECT ... FOR UPDATE`) al momento della prenotazione, per prevenire race condition su richieste concorrenti.
-- L'email del donatore è normalizzata (trim + lowercase) e il codice fiscale viene validato e normalizzato prima del salvataggio.
+- **Finestra temporale**: la data dello slot non può superare l'orizzonte (`orizzonte-giorni`); nel flusso donatore l'inizio dello slot deve distare almeno `anticipo-minimo-minuti` da adesso (confine incluso), il che esclude automaticamente date/orari passati. Il "momento attuale" è calcolato su fuso `Europe/Rome` tramite un bean `Clock` iniettabile. Coerentemente, il calendario mensile (`giorni-non-disponibili`) grigia anche i giorni in cui nessuno slot rispetta più l'anticipo minimo (tipicamente il giorno corrente dopo una certa ora).
+- **Apertura del centro**: il centro deve risultare aperto nella data richiesta (calendario ordinario + festivi ricorrenti + variazioni di apertura straordinarie).
+- **Età e intervallo tra donazioni**: `eta-minima` ≤ età ≤ `eta-massima` alla data della donazione; rispetto dell'intervallo minimo (uomini/donne) rispetto alla prenotazione esistente. Non è ammesso prenotare una data uguale o anteriore a una prenotazione già presente (per anticiparla si riprogramma o si annulla).
+- **Limite donazioni donne**: in qualsiasi finestra di `finestra-limite-donne-giorni` giorni non possono cadere più di `max-donazioni-donne-per-finestra` donazioni della stessa donatrice.
+- **Concorrenza**: la risoluzione dell'anagrafica donatore avviene in una transazione propria (`REQUIRES_NEW`): l'insert è committato subito, così il vincolo `uq_donatori_codice_fiscale` arbitra due prime prenotazioni concorrenti dello stesso CF e chi perde la corsa rilegge la riga altrui. Poi, al momento della prenotazione, vengono bloccati a livello di riga (`SELECT ... FOR UPDATE`) prima il donatore (serializza prenotazioni concorrenti dello stesso donatore) e poi lo slot. Il contatore `posti_occupati` non viene incrementato/decrementato ma **ricalcolato** dal numero reale di prenotazioni sullo slot, così resta sempre autoritativo.
+- **Riprogrammazione**: deve restare nello stesso centro trasfusionale; lo spostamento tra centri diversi non è consentito.
+- L'email del donatore è normalizzata (trim + lowercase) e il codice fiscale viene validato e normalizzato prima del salvataggio. Nome e cognome sono normalizzati (trim + collasso degli spazi multipli) e vincolati a sole lettere, spazi, apostrofi, punti e trattini.
 
 ### Validazione del codice fiscale
 
-Il codice fiscale non è solo controllato nella forma (lunghezza, carattere di controllo): viene **decodificato e messo a confronto con l'anagrafica dichiarata**. `@CodiceFiscale` verifica la struttura e il carattere di controllo; `@CoerenzaCodiceFiscale` (validatore a livello di record) estrae data di nascita e sesso codificati nel CF e li confronta con i campi `dataNascita` e `sesso` della richiesta, rifiutando la prenotazione se non combaciano. La decodifica gestisce l'**omocodia** (sostituzione di cifre con lettere nei CF duplicati).
+Il codice fiscale non è solo controllato nella forma (lunghezza, carattere di controllo): viene **decodificato e messo a confronto con l'anagrafica dichiarata**. `@CodiceFiscale` verifica la struttura e il carattere di controllo; `@CoerenzaCodiceFiscale` (validatore a livello di record) confronta con l'anagrafica dichiarata:
+
+- **data di nascita e sesso** codificati nel CF vs i campi `dataNascita` e `sesso` (la decodifica gestisce l'**omocodia**, cioè la sostituzione di cifre con lettere nei CF duplicati);
+- le **prime tre lettere di cognome e nome** (posizioni 1–6 del CF, sempre alfabetiche) ricalcolate dai campi `cognome` e `nome` con l'algoritmo dell'Agenzia delle Entrate, previa normalizzazione (maiuscolo, rimozione di diacritici, spazi e apostrofi per cognomi/nomi composti). I nomi multipli vanno inseriti per intero.
+
+Ogni discrepanza produce un errore `400` con il dettaglio sul campo specifico (`codiceFiscale`, `cognome` o `nome`).
 
 ## Requisiti
 
@@ -180,20 +192,19 @@ Il file [`.env.example`](.env.example) elenca le variabili del profilo di produz
 
 ## Gestione dello schema del database
 
-Lo schema è versionato con **Flyway** (*database as code*) e applicato automaticamente all'avvio dell'applicazione. Non serve importare dump o creare tabelle a mano.
+Lo schema è versionato con **Flyway** (*database as code*) negli ambienti gestiti da Flyway (sviluppo locale). In **produzione** `spring.flyway.enabled=false`: lo schema è gestito manualmente, quindi ogni migrazione va applicata a mano anche lì.
 
 ```
 src/main/resources/db/
-├── migration/   → V1__init_schema.sql, ...   schema (tutti i profili)
+├── migration/   → V1__init_schema.sql, V2__unique_prenotazioni_donatore_slot.sql, ...
 └── demo/        → R__seed_demo.sql             dati demo (solo profili non-prod)
 ```
 
-- **`db/migration`** — migrazioni versionate dello schema. Eseguite in ogni ambiente. `spring.jpa.hibernate.ddl-auto=validate`: Flyway costruisce lo schema, Hibernate verifica solo che corrisponda alle entità.
+- **`db/migration`** — migrazioni versionate dello schema. `spring.jpa.hibernate.ddl-auto=validate`: Flyway costruisce lo schema, Hibernate verifica solo che corrisponda alle entità.
 - **`db/demo`** — migrazione *repeatable* con dati di esempio (un admin, orari, centri, festivi nazionali). Caricata solo in locale grazie a `spring.flyway.locations`; in produzione questa cartella non viene mai letta.
 - Su un database **già esistente** (creato prima di Flyway) è attivo `spring.flyway.baseline-on-migrate=true`: al primo avvio Flyway registra lo stato come baseline invece di rieseguire `V1`.
-- In produzione `flyway:clean` è disabilitato (`spring.flyway.clean-disabled=true`).
 
-Per aggiungere una modifica allo schema: creare un nuovo file `V2__descrizione.sql` (poi `V3__...`) in `db/migration`.
+Per aggiungere una modifica allo schema: creare un nuovo file `V3__descrizione.sql` in `db/migration` **e** applicare lo stesso DDL a mano sul database di produzione.
 
 ### Credenziali admin demo
 
@@ -268,7 +279,7 @@ Nessuna autenticazione richiesta.
 | Metodo | Endpoint | Descrizione |
 |---|---|---|
 | `GET` | `/api/trasfusionali` | Elenco dei centri trasfusionali disponibili |
-| `GET` | `/api/trasfusionali/{idTrasfusionale}/giorni-non-disponibili?mese=YYYY-MM` | Giorni non prenotabili del mese per un centro |
+| `GET` | `/api/trasfusionali/{idTrasfusionale}/giorni-non-disponibili?mese=YYYY-MM` | Giorni non prenotabili del mese per un centro (fuori orizzonte, centro chiuso, oppure nessuno slot del giorno rispetta più l'anticipo minimo) |
 | `GET` | `/api/trasfusionali/{idTrasfusionale}/slot?data=YYYY-MM-DD` | Slot orari disponibili in una data |
 | `POST` | `/api/prenotazioni` | Crea una nuova prenotazione (anagrafica donatore + slot + tipo donazione) |
 
@@ -288,6 +299,7 @@ Richiede header `Authorization: Bearer <token>`, salvo `/api/auth/login`.
 | `GET` | `/api/admin/variazioni-apertura?idTrasfusionale=` | Elenco delle variazioni straordinarie di apertura/chiusura |
 | `POST` | `/api/admin/variazioni-apertura` | Creazione di una o più variazioni di apertura |
 | `DELETE` | `/api/admin/variazioni-apertura/{id}` | Rimozione di una variazione di apertura |
+| `GET` | `/api/admin/giorni-chiusura?idTrasfusionale=&anno=` | Riepilogo dei giorni di chiusura di un centro per l'anno (default anno corrente, solo anno corrente o successivi): festivi ordinari + chiusure straordinarie, dall'oggi al 31 dicembre |
 | `GET` | `/api/admin/log-modifiche` | Storico delle modifiche (riprogrammazioni e cancellazioni) effettuate dagli amministratori |
 
 ### Monitoraggio
@@ -315,7 +327,7 @@ Esempi con l'ambiente locale (`http://localhost:8080`) e i dati demo caricati da
    ]
    ```
 
-2. Creazione della prenotazione (anagrafica donatore + `idSlot`). Data di nascita e sesso devono essere coerenti con il codice fiscale:
+2. Creazione della prenotazione (anagrafica donatore + `idSlot`). Cognome, nome, data di nascita e sesso devono essere coerenti con il codice fiscale:
 
    ```bash
    curl -X POST http://localhost:8080/api/prenotazioni \
@@ -339,11 +351,16 @@ Esempi con l'ambiente locale (`http://localhost:8080`) e i dati demo caricati da
      "nomeDonatore": "Mario",
      "cognomeDonatore": "Rossi",
      "nomeTrasfusionale": "Centro Trasfusionale Demo Nord",
+     "indirizzoTrasfusionale": "Via Roma",
+     "civicoTrasfusionale": 10,
+     "telefonoTrasfusionale": "0612345678",
      "dataPrenotazione": "2026-09-15",
      "orarioPrenotazione": "08:00:00",
      "tipoDonazione": "SI"
    }
    ```
+
+   La risposta contiene tutti i dati del centro (indirizzo, civico, telefono): il donatore ha la conferma completa anche se l'email non arriva.
 
    Se lo slot è pieno, il centro è chiuso o una regola non è rispettata, la risposta è `409` nel formato di errore standard (vedi [Gestione degli errori](#gestione-degli-errori)).
 
@@ -396,6 +413,7 @@ Esempi con l'ambiente locale (`http://localhost:8080`) e i dati demo caricati da
 - **Rate limiting**: implementato con Bucket4j, applicato per indirizzo IP (con supporto all'header `CF-Connecting-IP` dietro proxy/CDN):
   - `POST /api/auth/login`: massimo 5 richieste ogni 5 minuti
   - `POST /api/prenotazioni`: massimo 5 richieste al minuto
+  - `GET /api/trasfusionali/**` (elenco centri, giorni non disponibili, slot): massimo 60 richieste al minuto — gli endpoint di consultazione creano slot on-demand ad ogni chiamata
   - Il superamento del limite restituisce `429 Too Many Requests` con corpo JSON coerente con il formato di errore standard.
 - **CSRF**: disabilitato, coerentemente con un'API stateless consumata da client separati (SPA/mobile).
 
@@ -406,7 +424,7 @@ Tutte le risposte di errore seguono un formato JSON uniforme, prodotto dal `Glob
 ```json
 {
   "status": 409,
-  "errore": "Slot esaurito",
+  "errore": "Prenotazione non consentita",
   "messaggio": "Lo slot selezionato non è più disponibile. Scegli un altro orario.",
   "path": "/api/prenotazioni",
   "erroriValidazione": null
@@ -418,20 +436,19 @@ Principali mappature stato HTTP / eccezione di dominio:
 | Stato | Eccezione | Descrizione |
 |---|---|---|
 | `401` | `CredenzialiNonValideException` | Login fallito |
+| `400` | `RichiestaNonValidaException` | Parametro semanticamente non valido oltre le annotazioni di validazione (es. anno nel passato) |
 | `404` | `RisorsaNonTrovataException` | Risorsa non trovata (es. slot inesistente) |
-| `409` | `SlotEsauritoException` | Slot senza posti disponibili |
-| `409` | `GiornoChiusoException` | Centro chiuso nella data richiesta |
-| `409` | `EtaNonValidaException` | Età del donatore inferiore al minimo |
-| `409` | `IntervalloNonRispettatoException` | Intervallo minimo tra donazioni non rispettato |
-| `409` | `EmailAssociataAdAltroDonatoreException` | Email già associata a un altro donatore |
+| `409` | `RegolaPrenotazioneException` | Una regola di business sulle prenotazioni non è rispettata: slot senza posti, centro chiuso nella data, data oltre l'orizzonte, anticipo minimo non rispettato (o slot già passato per l'admin), età fuori dall'intervallo ammesso, intervallo minimo tra donazioni, prenotazione già esistente in data uguale o successiva, limite donazioni della donatrice nella finestra mobile, riprogrammazione verso un altro centro, email già associata a un altro donatore. Il caso specifico è nel campo `messaggio`. |
 | `400` | Errori di validazione (`@Valid`, parametri) | Corpo o parametri della richiesta non validi, con dettaglio per campo |
+| `409` | `DataIntegrityViolationException` | Vincolo del database violato: messaggio "dato duplicato" per una violazione di unicità, "dati non conformi ai vincoli previsti" per una violazione di `CHECK` |
 | `429` | Rate limit superato | Troppe richieste dallo stesso client |
 | `500` | Eccezione generica non gestita | Errore interno, loggato lato server |
 
 ## Email e PDF
 
 - **Conferma prenotazione**: alla creazione di una prenotazione viene pubblicato un evento applicativo gestito da `PrenotazioneEmailListener`, che invia in modo asincrono (thread pool dedicato `emailExecutor`) un'email di conferma al donatore tramite SMTP.
-- **Log invii**: ogni tentativo di invio email viene tracciato nella tabella `log_email` con relativo esito (`OK`/`KO`) ed eventuale messaggio di errore.
+- **Log invii**: ogni tentativo di invio email viene tracciato nella tabella `log_email` con relativo esito (`OK`/`KO`) ed eventuale messaggio di errore. `OK` indica "accettato dal relay SMTP", non necessariamente "consegnato".
+- **Ritentativo**: un job schedulato (`RitentativoEmailJob`, ogni 20 minuti) rispedisce le conferme rimaste `KO` — nessun `OK`, primo fallimento entro le ultime 2 ore, meno di 10 tentativi — ricostruendo il payload dalla prenotazione. Oltre la finestra la riga resta `KO` e visibile all'admin.
 - **Esportazione PDF**: l'amministratore può esportare in PDF l'elenco delle prenotazioni di un centro per una data specifica, generato tramite OpenPDF.
 
 ## Logging

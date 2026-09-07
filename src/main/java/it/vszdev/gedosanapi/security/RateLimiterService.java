@@ -18,8 +18,15 @@ public class RateLimiterService {
     private static final int PRENOTAZIONE_MAX_RICHIESTE = 5;
     private static final Duration PRENOTAZIONE_FINESTRA = Duration.ofMinutes(1);
 
+    // Endpoint pubblici di sola consultazione (elenco centri, giorni non disponibili, slot). Limite
+    // generoso: copre un umano che naviga il calendario, taglia uno script che martella (lo slot crea
+    // righe on-demand a ogni chiamata).
+    private static final int CONSULTAZIONE_MAX_RICHIESTE = 60;
+    private static final Duration CONSULTAZIONE_FINESTRA = Duration.ofMinutes(1);
+
     private final Cache<String, Bucket> loginBuckets = costruisciCache(LOGIN_FINESTRA);
     private final Cache<String, Bucket> prenotazioneBuckets = costruisciCache(PRENOTAZIONE_FINESTRA);
+    private final Cache<String, Bucket> consultazioneBuckets = costruisciCache(CONSULTAZIONE_FINESTRA);
 
     public boolean tryConsumeLogin(String chiave) {
         return loginBuckets.get(chiave, k -> creaBucket(LOGIN_MAX_RICHIESTE, LOGIN_FINESTRA)).tryConsume(1);
@@ -27,6 +34,10 @@ public class RateLimiterService {
 
     public boolean tryConsumePrenotazione(String chiave) {
         return prenotazioneBuckets.get(chiave, k -> creaBucket(PRENOTAZIONE_MAX_RICHIESTE, PRENOTAZIONE_FINESTRA)).tryConsume(1);
+    }
+
+    public boolean tryConsumeConsultazione(String chiave) {
+        return consultazioneBuckets.get(chiave, k -> creaBucket(CONSULTAZIONE_MAX_RICHIESTE, CONSULTAZIONE_FINESTRA)).tryConsume(1);
     }
 
     private Cache<String, Bucket> costruisciCache(Duration finestra) {
