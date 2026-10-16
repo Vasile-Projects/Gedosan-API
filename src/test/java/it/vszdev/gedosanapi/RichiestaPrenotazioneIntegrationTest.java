@@ -177,6 +177,16 @@ class RichiestaPrenotazioneIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void campoSconosciutoNelJson_rifiutato() throws Exception {
+        long slot = idSlot(dataPrenotabile(), "09:00:00");
+        String conCampoInPiu = MARIO.json(slot).replace("\"tipoDonazione\":\"SI\"", "\"tipoDonazione\":\"SI\",\"admin\":true");
+
+        postJson("/api/prenotazioni", conCampoInPiu).andExpect(status().isBadRequest());
+        postJson("/api/prenotazioni/conferma", "{\"token\":\"abc\",\"altro\":1}").andExpect(status().isBadRequest());
+        assertThat(conta("prenotazioni_in_attesa")).isZero();
+    }
+
+    @Test
     void erroriCheNonRiguardanoLaPersona_sonoImmediati() throws Exception {
         long slot = idSlot(dataPrenotabile(), "09:00:00");
         Persona minorenne = new Persona("Giulia", "Neri", LocalDate.now(ZONA).minusYears(16), true, "giulia@test.it");
