@@ -13,6 +13,7 @@ import it.vszdev.gedosanapi.exception.RisorsaNonTrovataException;
 import it.vszdev.gedosanapi.models.Donatore;
 import it.vszdev.gedosanapi.models.Prenotazione;
 import it.vszdev.gedosanapi.models.SlotGiornaliero;
+import it.vszdev.gedosanapi.repositories.PrenotazioneInAttesaRepository;
 import it.vszdev.gedosanapi.repositories.PrenotazioneRepository;
 import it.vszdev.gedosanapi.repositories.SlotGiornalieroRepository;
 import org.springframework.context.ApplicationEventPublisher;
@@ -32,6 +33,7 @@ public class PrenotazioneService {
     private final DonatoreService donatoreService;
     private final SlotGiornalieroRepository slotGiornalieroRepository;
     private final PrenotazioneRepository prenotazioneRepository;
+    private final PrenotazioneInAttesaRepository prenotazioneInAttesaRepository;
     private final PrenotazioniProperties prenotazioniProperties;
     private final ApplicationEventPublisher eventPublisher;
     private final DisponibilitaService disponibilitaService;
@@ -40,6 +42,7 @@ public class PrenotazioneService {
     public PrenotazioneService(DonatoreService donatoreService,
                                SlotGiornalieroRepository slotGiornalieroRepository,
                                PrenotazioneRepository prenotazioneRepository,
+                               PrenotazioneInAttesaRepository prenotazioneInAttesaRepository,
                                PrenotazioniProperties prenotazioniProperties,
                                ApplicationEventPublisher eventPublisher,
                                DisponibilitaService disponibilitaService,
@@ -47,6 +50,7 @@ public class PrenotazioneService {
         this.donatoreService = donatoreService;
         this.slotGiornalieroRepository = slotGiornalieroRepository;
         this.prenotazioneRepository = prenotazioneRepository;
+        this.prenotazioneInAttesaRepository = prenotazioneInAttesaRepository;
         this.prenotazioniProperties = prenotazioniProperties;
         this.eventPublisher = eventPublisher;
         this.disponibilitaService = disponibilitaService;
@@ -145,11 +149,16 @@ public class PrenotazioneService {
 
     // Ricalcola posti_occupati dal numero reale di prenotazioni sullo slot invece di incrementare/
     // decrementare il contatore: il valore resta sempre autoritativo e non può derivare (niente
-    // decrementi sotto zero né doppi conteggi). Va chiamato DOPO save/delete/spostamento della
-    // prenotazione; il flush rende visibili le modifiche pendenti al COUNT.
+    // decrementi sotto zero né doppi conteggi). Contano le prenotazioni confermate e le attese di
+    // conferma non ancora scadute, che tengono il posto finché il link è valido. Va chiamato DOPO
+    // save/delete/spostamento di una prenotazione o di un'attesa; il flush (dell'intero persistence
+    // context) rende visibili le modifiche pendenti ai COUNT.
     void ricalcolaPostiOccupati(SlotGiornaliero slot) {
         prenotazioneRepository.flush();
-        slot.setPostiOccupati(Math.toIntExact(prenotazioneRepository.countBySlotGiornaliero_Id(slot.getId())));
+        long confermate = prenotazioneRepository.countBySlotGiornaliero_Id(slot.getId());
+        long inAttesa = prenotazioneInAttesaRepository.countBySlotGiornaliero_IdAndScadenzaAfter(
+                slot.getId(), LocalDateTime.now(clock));
+        slot.setPostiOccupati(Math.toIntExact(confermate + inAttesa));
     }
 
     void validaEta(LocalDate dataNascita, LocalDate dataDonazione) {
