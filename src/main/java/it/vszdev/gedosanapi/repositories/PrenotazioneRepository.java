@@ -30,6 +30,10 @@ public interface PrenotazioneRepository extends JpaRepository<Prenotazione, Long
     @EntityGraph(attributePaths = {"donatore", "slotGiornaliero.trasfusionale", "slotGiornaliero.orario"})
     List<Prenotazione> findByIdIn(Collection<Long> ids);
 
+    // Storico delle prenotazioni di un donatore per il dettaglio admin, dalla più recente.
+    @EntityGraph(attributePaths = {"slotGiornaliero.trasfusionale", "slotGiornaliero.orario"})
+    List<Prenotazione> findAllByDonatore_IdOrderBySlotGiornaliero_DataDesc(Long idDonatore);
+
     List<Prenotazione> findAllBySlotGiornaliero_Trasfusionale_IdAndSlotGiornaliero_DataOrderBySlotGiornaliero_Orario_OrarioAsc(
             Long idTrasfusionale, LocalDate data);
 }

@@ -1,15 +1,14 @@
 package it.vszdev.gedosanapi.validation;
 
-import it.vszdev.gedosanapi.dto.PrenotazioneRequest;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 
 import java.time.LocalDate;
 
-public class CoerenzaCodiceFiscaleValidator implements ConstraintValidator<CoerenzaCodiceFiscale, PrenotazioneRequest> {
+public class CoerenzaCodiceFiscaleValidator implements ConstraintValidator<CoerenzaCodiceFiscale, DatiAnagrafici> {
 
     @Override
-    public boolean isValid(PrenotazioneRequest request, ConstraintValidatorContext context) {
+    public boolean isValid(DatiAnagrafici request, ConstraintValidatorContext context) {
         if (request == null || request.dataNascita() == null || request.sesso() == null || request.codiceFiscale() == null) {
             return true;
         }
