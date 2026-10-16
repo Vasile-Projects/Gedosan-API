@@ -4,7 +4,6 @@ import it.vszdev.gedosanapi.config.PrenotazioniProperties;
 import it.vszdev.gedosanapi.config.TimeConfig;
 import it.vszdev.gedosanapi.dto.PrenotazioneRequest;
 import it.vszdev.gedosanapi.dto.donatore.DatiDonatoreRequest;
-import it.vszdev.gedosanapi.dto.donatore.PrenotazioneResponse;
 import it.vszdev.gedosanapi.dto.email.ConfermaPrenotazioneEmailPayload;
 import it.vszdev.gedosanapi.enums.Sesso;
 import it.vszdev.gedosanapi.events.PrenotazioneEffettuataEvent;
@@ -57,11 +56,8 @@ public class PrenotazioneService {
         this.clock = clock;
     }
 
-    @Transactional
-    public PrenotazioneResponse crea(PrenotazioneRequest request) {
-        return new PrenotazioneResponse(creaPrenotazione(request, false));
-    }
-
+    // Creazione diretta, senza conferma via email: usata solo dall'area admin (AdminPrenotazioneService).
+    // Il flusso pubblico passa da RichiestaPrenotazioneService (attesa + link di conferma).
     @Transactional
     public Prenotazione creaPrenotazione(PrenotazioneRequest request, boolean flussoAdmin) {
         // Pre-check dell'età prima di toccare l'anagrafica: risolviDonatore committa in REQUIRES_NEW,
@@ -106,6 +102,14 @@ public class PrenotazioneService {
     // Regole condivise tra flusso donatore e admin. Unica differenza: l'anticipo minimo (banco
     // accettazione) non si applica all'admin, che però non può comunque prenotare uno slot già passato.
     void validaSlotPrenotabile(SlotGiornaliero slot, Donatore donatore, Long idPrenotazioneEsclusa, boolean flussoAdmin) {
+        validaSlotDisponibile(slot, flussoAdmin);
+        validaEta(donatore.getDataNascita(), slot.getData());
+        validaIntervallo(donatore, slot.getData(), idPrenotazioneEsclusa);
+    }
+
+    // Regole che dipendono solo dallo slot (calendario, anticipo, capienza) e non dalla persona: il loro
+    // esito si può comunicare subito nella risposta HTTP senza rivelare nulla su chi prenota.
+    void validaSlotDisponibile(SlotGiornaliero slot, boolean flussoAdmin) {
         LocalDate oggi = LocalDate.now(clock);
 
         if (slot.getData().isAfter(oggi.plusDays(prenotazioniProperties.getOrizzonteGiorni()))) {
@@ -121,8 +125,6 @@ public class PrenotazioneService {
             throw new RegolaPrenotazioneException(
                     "Lo slot selezionato non è più disponibile. Scegli un altro orario.");
         }
-        validaEta(donatore.getDataNascita(), slot.getData());
-        validaIntervallo(donatore, slot.getData(), idPrenotazioneEsclusa);
     }
 
     // Anticipo minimo: l'inizio dello slot deve distare almeno anticipoMinimoMinuti da adesso

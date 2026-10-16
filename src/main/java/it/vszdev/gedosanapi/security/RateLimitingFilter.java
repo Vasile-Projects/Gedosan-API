@@ -35,6 +35,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
                 case LOGIN -> rateLimiterService.tryConsumeLogin(chiave);
                 case PRENOTAZIONE -> rateLimiterService.tryConsumePrenotazione(chiave);
                 case CONSULTAZIONE -> rateLimiterService.tryConsumeConsultazione(chiave);
+                case CONFERMA -> rateLimiterService.tryConsumeConferma(chiave);
                 case NESSUNO -> true;
             };
 
@@ -67,6 +68,9 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             if ("/api/prenotazioni".equals(uri)) {
                 return Percorso.PRENOTAZIONE;
             }
+            if ("/api/prenotazioni/conferma".equals(uri)) {
+                return Percorso.CONFERMA;
+            }
             return Percorso.NESSUNO;
         }
 
@@ -87,6 +91,6 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     }
 
     private enum Percorso {
-        LOGIN, PRENOTAZIONE, CONSULTAZIONE, NESSUNO
+        LOGIN, PRENOTAZIONE, CONFERMA, CONSULTAZIONE, NESSUNO
     }
 }

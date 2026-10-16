@@ -31,7 +31,10 @@ public record PrenotazioneRequest(
         @Pattern(regexp = "^\\+39[0-9]{9,10}$", message = "Il cellulare deve essere nel formato +39 seguito da 9 o 10 cifre")
         String cellulare,
         @NotNull Long idSlot,
-        @NotNull TipoDonazione tipoDonazione
+        @NotNull TipoDonazione tipoDonazione,
+        // Token del widget Cloudflare Turnstile. Facoltativo qui perché lo stesso DTO serve anche
+        // all'area admin; nel flusso pubblico lo verifica TurnstileService.
+        @Size(max = 2048) String turnstileToken
 ) {
     // Una lettera iniziale (accenti e alfabeti non latini inclusi via \p{L}), poi lettere, spazi,
     // apostrofi (dritto e tipografico), punti e trattini: copre nomi composti e stranieri.

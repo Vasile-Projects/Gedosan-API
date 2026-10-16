@@ -24,9 +24,14 @@ public class RateLimiterService {
     private static final int CONSULTAZIONE_MAX_RICHIESTE = 60;
     private static final Duration CONSULTAZIONE_FINESTRA = Duration.ofMinutes(1);
 
+    // Conferma via link: il token a 256 bit non è indovinabile, il limite taglia solo usi anomali.
+    private static final int CONFERMA_MAX_RICHIESTE = 10;
+    private static final Duration CONFERMA_FINESTRA = Duration.ofMinutes(1);
+
     private final Cache<String, Bucket> loginBuckets = costruisciCache(LOGIN_FINESTRA);
     private final Cache<String, Bucket> prenotazioneBuckets = costruisciCache(PRENOTAZIONE_FINESTRA);
     private final Cache<String, Bucket> consultazioneBuckets = costruisciCache(CONSULTAZIONE_FINESTRA);
+    private final Cache<String, Bucket> confermaBuckets = costruisciCache(CONFERMA_FINESTRA);
 
     public boolean tryConsumeLogin(String chiave) {
         return loginBuckets.get(chiave, k -> creaBucket(LOGIN_MAX_RICHIESTE, LOGIN_FINESTRA)).tryConsume(1);
@@ -38,6 +43,10 @@ public class RateLimiterService {
 
     public boolean tryConsumeConsultazione(String chiave) {
         return consultazioneBuckets.get(chiave, k -> creaBucket(CONSULTAZIONE_MAX_RICHIESTE, CONSULTAZIONE_FINESTRA)).tryConsume(1);
+    }
+
+    public boolean tryConsumeConferma(String chiave) {
+        return confermaBuckets.get(chiave, k -> creaBucket(CONFERMA_MAX_RICHIESTE, CONFERMA_FINESTRA)).tryConsume(1);
     }
 
     private Cache<String, Bucket> costruisciCache(Duration finestra) {

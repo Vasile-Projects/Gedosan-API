@@ -28,6 +28,11 @@ public class PrenotazioniProperties {
     private int postiPerSlot;
     private int anticipoMinimoMinuti;
 
+    // Validità del link di conferma inviato per email: per tutto questo tempo la richiesta occupa il
+    // posto sullo slot. @Min(1): con 0 nessuna richiesta sarebbe mai confermabile.
+    @Min(1)
+    private int minutiAttesaConferma;
+
     public int getOrizzonteGiorni() {
         return orizzonteGiorni;
     }
@@ -103,5 +108,13 @@ public class PrenotazioniProperties {
 
     public void setAnticipoMinimoMinuti(int anticipoMinimoMinuti) {
         this.anticipoMinimoMinuti = anticipoMinimoMinuti;
+    }
+
+    public int getMinutiAttesaConferma() {
+        return minutiAttesaConferma;
+    }
+
+    public void setMinutiAttesaConferma(int minutiAttesaConferma) {
+        this.minutiAttesaConferma = minutiAttesaConferma;
     }
 }

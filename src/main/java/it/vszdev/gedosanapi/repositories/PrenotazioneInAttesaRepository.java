@@ -15,12 +15,16 @@ public interface PrenotazioneInAttesaRepository extends JpaRepository<Prenotazio
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<PrenotazioneInAttesa> findWithLockByTokenHash(String tokenHash);
 
-    // Attesa già aperta per lo stesso CF (al massimo una, vincolo uq_attesa_codice_fiscale).
-    Optional<PrenotazioneInAttesa> findByCodiceFiscale(String codiceFiscale);
+    // Attesa già aperta per lo stesso CF (al massimo una, vincolo uq_attesa_codice_fiscale), bloccata
+    // perché una nuova richiesta la sostituisce. Ordine dei lock ovunque: attesa -> donatore -> slot.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<PrenotazioneInAttesa> findWithLockByCodiceFiscale(String codiceFiscale);
 
     // Attese che occupano ancora un posto sullo slot: concorrono a posti_occupati insieme alle confermate.
     long countBySlotGiornaliero_IdAndScadenzaAfter(Long idSlot, LocalDateTime adesso);
 
-    // Attese scadute, da cancellare fisicamente dal job di scadenza.
-    List<PrenotazioneInAttesa> findByScadenzaLessThanEqual(LocalDateTime adesso);
+    // Attese scadute, da cancellare fisicamente dal job di scadenza. Bloccate (in ordine di id) prima
+    // degli slot, rispettando lo stesso ordine dei lock dei flussi di richiesta e conferma.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    List<PrenotazioneInAttesa> findByScadenzaLessThanEqualOrderByIdAsc(LocalDateTime adesso);
 }

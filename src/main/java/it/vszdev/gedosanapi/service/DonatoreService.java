@@ -19,6 +19,8 @@ public class DonatoreService {
         this.donatoreRepository = donatoreRepository;
     }
 
+    // Solo flusso admin (operatore fidato): un donatore esistente viene aggiornato con i dati inseriti.
+    // Il flusso pubblico non passa di qui e non aggiorna mai un'anagrafica esistente (vedi creaDonatore).
     // Il match è sul codice fiscale, non sull'email: la stessa persona può tornare con contatti diversi.
     // REQUIRES_NEW (come SlotGiornalieroService.risolviSlot): l'insert del donatore viene committato
     // subito, così il vincolo uq_donatori_codice_fiscale fa da arbitro tra due prime prenotazioni
@@ -32,6 +34,19 @@ public class DonatoreService {
 
         return donatoreRepository.findByCodiceFiscale(codiceFiscale)
                 .map(donatoreEsistente -> aggiornaDonatore(donatoreEsistente, dati, email))
+                .orElseGet(() -> creaDonatoreSicuro(dati, codiceFiscale, email));
+    }
+
+    // Flusso pubblico, alla conferma via email: crea il donatore se il CF non esiste. Mai aggiornamenti.
+    // Stessa REQUIRES_NEW di risolviDonatore, con il vincolo UNIQUE sul CF come arbitro: se un'altra
+    // richiesta crea lo stesso CF in parallelo si restituisce la riga altrui, e il chiamante verifica
+    // che l'email coincida prima di usarla.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Donatore creaDonatore(DatiDonatoreRequest dati) {
+        String codiceFiscale = Donatore.normalizzaCodiceFiscale(dati.codiceFiscale());
+        String email = Donatore.normalizzaEmail(dati.email());
+
+        return donatoreRepository.findByCodiceFiscale(codiceFiscale)
                 .orElseGet(() -> creaDonatoreSicuro(dati, codiceFiscale, email));
     }
 
