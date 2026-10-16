@@ -56,9 +56,11 @@
             <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- In Spring Boot 4 l'auto-configurazione di Flyway sta in un modulo separato: con il solo
+             flyway-core le migrazioni non partono all'avvio. Lo starter porta modulo e flyway-core. -->
         <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>

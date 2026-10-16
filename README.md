@@ -119,7 +119,7 @@ L'API risponde su `http://localhost:8080`. Nessuna configurazione richiesta: i d
 
 Per un'istanza MySQL diversa, basta impostare le variabili `DB_HOST`, `DB_USERNAME`, `DB_PASSWORD` nell'ambiente prima dell'avvio.
 
-Flyway è attivo solo negli ambienti di sviluppo; in produzione (`spring.flyway.enabled=false`) lo schema è gestito manualmente e ogni nuova migrazione va applicata anche a mano.
+Flyway è attivo anche in produzione, ma applica solo lo schema (`db/migration`, niente dati demo). Il DB di produzione è nato prima di Flyway con V1 e V2 applicate a mano: `baseline-version=2` lo registra a quel punto e le migrazioni successive partono da sole al deploy. Prima di ogni deploy con una nuova migrazione conviene fare un backup del database.
 
 ### Credenziali demo
 
