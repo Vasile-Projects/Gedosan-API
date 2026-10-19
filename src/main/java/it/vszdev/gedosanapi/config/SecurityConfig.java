@@ -1,5 +1,6 @@
 package it.vszdev.gedosanapi.config;
 
+import it.vszdev.gedosanapi.security.BotApiKeyFilter;
 import it.vszdev.gedosanapi.security.JwtAuthFilter;
 import it.vszdev.gedosanapi.security.RateLimitingFilter;
 import org.springframework.context.annotation.Bean;
@@ -18,10 +19,13 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final RateLimitingFilter rateLimitingFilter;
+    private final BotApiKeyFilter botApiKeyFilter;
 
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter, RateLimitingFilter rateLimitingFilter) {
+    public SecurityConfig(JwtAuthFilter jwtAuthFilter, RateLimitingFilter rateLimitingFilter,
+                          BotApiKeyFilter botApiKeyFilter) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.rateLimitingFilter = rateLimitingFilter;
+        this.botApiKeyFilter = botApiKeyFilter;
     }
 
     // Il flusso donatore è pubblico per scelta: nessuna registrazione/login lato donatore.
@@ -36,9 +40,13 @@ public class SecurityConfig {
                         .requestMatchers("/api/prenotazioni", "/api/prenotazioni/conferma").permitAll()
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        // Solo n8n, autenticato da BotApiKeyFilter: il JWT admin non basta.
+                        .requestMatchers("/api/bot/**").hasRole("BOT")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(rateLimitingFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(botApiKeyFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

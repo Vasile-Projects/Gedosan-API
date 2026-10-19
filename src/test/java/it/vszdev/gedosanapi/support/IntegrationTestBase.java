@@ -38,6 +38,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
         "spring.mail.password=test",
         "turnstile.enabled=false",
         "app.frontend-url=http://frontend.test",
+        "bot.api-key=" + IntegrationTestBase.BOT_KEY,
+        "bot.telegram-url=https://t.me/GedosanTestBot",
         // Il mittente email è un mock: l'health check della mail cercherebbe quello reale.
         "management.health.mail.enabled=false"
 })
@@ -45,6 +47,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 @Import(TestcontainersConfiguration.class)
 public abstract class IntegrationTestBase {
 
+    protected static final String BOT_KEY = "chiave-bot-di-test";
     protected static final ZoneId ZONA = ZoneId.of("Europe/Rome");
     private static final Pattern TOKEN = Pattern.compile("token=([A-Za-z0-9_-]+)");
     // Ogni richiesta ha un "IP" diverso: il rate limit per IP non interferisce tra i test.
@@ -63,6 +66,8 @@ public abstract class IntegrationTestBase {
     void pulisciDatabase() {
         jdbc.update("DELETE FROM log_modifiche_donatori");
         jdbc.update("DELETE FROM log_modifiche_prenotazioni");
+        jdbc.update("DELETE FROM codici_collegamento");
+        jdbc.update("DELETE FROM collegamenti_telegram");
         jdbc.update("DELETE FROM log_email");
         jdbc.update("DELETE FROM prenotazioni");
         jdbc.update("DELETE FROM prenotazioni_in_attesa");
@@ -155,6 +160,46 @@ public abstract class IntegrationTestBase {
 
     protected static String destinatario(SimpleMailMessage email) {
         return email.getTo()[0];
+    }
+
+    // --- Bot Telegram ---
+
+    private static final Pattern CODICE = Pattern.compile("(?m)^\\s*(\\d{6})\\s*$");
+
+    protected MockHttpServletRequestBuilder bot(MockHttpServletRequestBuilder builder) {
+        return conIp(builder).header("X-Bot-Key", BOT_KEY);
+    }
+
+    protected ResultActions postBot(String url, String json) throws Exception {
+        return mvc.perform(bot(post(url)).contentType(MediaType.APPLICATION_JSON).content(json));
+    }
+
+    protected ResultActions richiediCodice(long chatId, String codiceFiscale, String email) throws Exception {
+        return postBot("/api/bot/collegamento/richiesta",
+                "{\"chatId\":%d,\"codiceFiscale\":\"%s\",\"email\":\"%s\"}".formatted(chatId, codiceFiscale, email));
+    }
+
+    protected ResultActions verificaCodice(long chatId, String codice) throws Exception {
+        return postBot("/api/bot/collegamento/verifica", "{\"chatId\":%d,\"codice\":\"%s\"}".formatted(chatId, codice));
+    }
+
+    protected static String codice(SimpleMailMessage email) {
+        Matcher m = CODICE.matcher(email.getText());
+        if (!m.find()) {
+            throw new AssertionError("Nessun codice nell'email: " + email.getSubject());
+        }
+        return m.group(1);
+    }
+
+    // Prenotazione già esistente in una data qualsiasi (anche passata), scritta direttamente a database.
+    protected long prenotazioneDiretta(Persona p, LocalDate data) {
+        jdbc.update("INSERT IGNORE INTO slot_giornalieri (id_centro, ora, data, posti_occupati) VALUES (1, '09:00:00', ?, 0)", data);
+        Long idSlot = jdbc.queryForObject("SELECT id FROM slot_giornalieri WHERE id_centro = 1 AND ora = '09:00:00' AND data = ?",
+                Long.class, data);
+        jdbc.update("INSERT INTO prenotazioni (id_donatore, id_slot, tipo_donazione, canale) "
+                        + "SELECT id, ?, 'SI', 'SITO' FROM donatori WHERE codice_fiscale = ?", idSlot, p.codiceFiscale());
+        jdbc.update("UPDATE slot_giornalieri SET posti_occupati = posti_occupati + 1 WHERE id = ?", idSlot);
+        return idSlot;
     }
 
     protected String tokenAdmin() throws Exception {

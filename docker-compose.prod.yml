@@ -21,6 +21,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:?serve il secret JWT_SECRET}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?serve il secret CORS_ALLOWED_ORIGINS}
       TURNSTILE_SECRET: ${TURNSTILE_SECRET:?serve il secret TURNSTILE_SECRET}
+      BOT_API_KEY: ${BOT_API_KEY:?serve il secret BOT_API_KEY}
+      BOT_TELEGRAM_URL: ${BOT_TELEGRAM_URL:-}
     networks:
       - gedosan-net
     healthcheck:

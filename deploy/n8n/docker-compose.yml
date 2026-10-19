@@ -1,0 +1,42 @@
+# n8n per il bot Telegram di Gedosan. Avvio manuale dal server (non passa dalla CI):
+#
+#   cd deploy/n8n && cp .env.example .env   # poi inserire il token del bot
+#   docker compose up -d
+#
+# Raggiunge l'API sulla rete interna (http://gedosan-api:8080). Da internet è esposto solo il percorso
+# /webhook/ (regola del tunnel Cloudflare); l'editor si apre dalla LAN su http://<server>:8085.
+
+services:
+  n8n:
+    image: n8nio/n8n:2.43.8
+    container_name: gedosan-n8n
+    restart: unless-stopped
+    ports:
+      - "8085:5678"
+    environment:
+      N8N_HOST: n8n.vszdev.it
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://n8n.vszdev.it/
+      N8N_PROXY_HOPS: 1
+      # L'editor si usa in http dalla LAN: senza questo il cookie di sessione non verrebbe salvato.
+      N8N_SECURE_COOKIE: "false"
+      GENERIC_TIMEZONE: Europe/Rome
+      TZ: Europe/Rome
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      # Il nodo "Invia con pulsanti" legge il token da $env (il nodo Telegram non gestisce tastiere con un
+      # numero variabile di pulsanti). Per questo N8N_ENCRYPTION_KEY NON va passata come variabile:
+      # n8n la genera e la salva nel volume, fuori dalla portata delle espressioni.
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?serve il token del bot in .env}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - gedosan-net
+
+volumes:
+  n8n_data:
+
+networks:
+  gedosan-net:
+    external: true

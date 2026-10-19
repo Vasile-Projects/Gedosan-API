@@ -17,10 +17,13 @@ import java.io.IOException;
 public class RateLimitingFilter extends OncePerRequestFilter {
 
     private final RateLimiterService rateLimiterService;
+    private final BotApiKeyFilter botApiKeyFilter;
     private final ObjectMapper objectMapper;
 
-    public RateLimitingFilter(RateLimiterService rateLimiterService, ObjectMapper objectMapper) {
+    public RateLimitingFilter(RateLimiterService rateLimiterService, BotApiKeyFilter botApiKeyFilter,
+                              ObjectMapper objectMapper) {
         this.rateLimiterService = rateLimiterService;
+        this.botApiKeyFilter = botApiKeyFilter;
         this.objectMapper = objectMapper;
     }
 
@@ -76,6 +79,11 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 
         if ("GET".equalsIgnoreCase(metodo)
                 && (uri.equals("/api/trasfusionali") || uri.startsWith("/api/trasfusionali/"))) {
+            // n8n consulta per conto di tutti gli utenti del bot dallo stesso IP interno: con il limite
+            // per IP un utente esaurirebbe la quota degli altri. I limiti del bot sono per chat.
+            if (botApiKeyFilter.chiaveValida(request.getHeader(BotApiKeyFilter.HEADER))) {
+                return Percorso.NESSUNO;
+            }
             return Percorso.CONSULTAZIONE;
         }
 

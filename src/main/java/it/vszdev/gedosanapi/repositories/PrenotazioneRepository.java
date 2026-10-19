@@ -3,8 +3,11 @@ package it.vszdev.gedosanapi.repositories;
 import it.vszdev.gedosanapi.models.Prenotazione;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -36,4 +39,12 @@ public interface PrenotazioneRepository extends JpaRepository<Prenotazione, Long
 
     List<Prenotazione> findAllBySlotGiornaliero_Trasfusionale_IdAndSlotGiornaliero_DataOrderBySlotGiornaliero_Orario_OrarioAsc(
             Long idTrasfusionale, LocalDate data);
+
+    // Prenotazioni di un giorno a cui manca ancora il promemoria (PromemoriaJob).
+    @EntityGraph(attributePaths = {"donatore", "slotGiornaliero.trasfusionale", "slotGiornaliero.orario"})
+    List<Prenotazione> findBySlotGiornaliero_DataAndPromemoriaInviatoAtIsNullOrderByIdAsc(LocalDate data);
+
+    @Modifying
+    @Query("UPDATE Prenotazione p SET p.promemoriaInviatoAt = :inviatoAt WHERE p.id = :id")
+    void segnaPromemoriaInviato(Long id, LocalDateTime inviatoAt);
 }

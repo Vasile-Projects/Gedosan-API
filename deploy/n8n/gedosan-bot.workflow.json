@@ -1,0 +1,1051 @@
+{
+  "name": "Gedosan - bot Telegram",
+  "nodes": [
+    {
+      "id": "0a7c8e9b-ee66-591a-b003-561302ed8f11",
+      "name": "Telegram",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram - Gedosan bot"
+        }
+      },
+      "webhookId": "e362151e-fe7b-52b3-ac53-25d7e4d0f98a"
+    },
+    {
+      "id": "af3251a1-831d-599c-b6e4-019b902051d2",
+      "name": "Normalizza",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        400
+      ],
+      "parameters": {
+        "jsCode": "// Unico punto di configurazione: indirizzo interno dell'API e sito pubblico.\nconst API = 'http://gedosan-api:8080';\nconst SITO = 'https://gedosan.vszdev.it';\n\n// Il chatId arriva da Telegram (aggiornamento firmato con il token segreto del webhook): è l'unica\n// identità di cui il bot si fida. Non viene mai preso dal testo dell'utente né dall'AI.\nconst u = $json;\nif (u.callback_query) {\n  const cq = u.callback_query;\n  const [azione, valore] = String(cq.data || '').split(':');\n  return { json: { api: API, sito: SITO, uscita: 6, chatId: cq.message.chat.id, queryId: cq.id,\n    azione, valore: Number(valore) || null, nome: cq.from.first_name || '' } };\n}\n\nconst m = u.message || {};\nconst testo = String(m.text || '').trim();\nconst base = { api: API, sito: SITO, chatId: m.chat && m.chat.id, nome: (m.from && m.from.first_name) || '' };\nconst esci = (uscita, extra) => ({ json: Object.assign({}, base, { uscita }, extra) });\nconst messaggio = (testo) => esci(1, { messaggio: testo });\n\nif (!m.chat || m.chat.type !== 'private') return esci(0, {});\nif (!testo) return messaggio('Per ora leggo solo messaggi di testo.');\n\nconst ESEMPIO = '<code>RSSMRA85M01H501Z, mario.rossi@email.it</code>';\nconst comando = testo.split(/\\s+/)[0].toLowerCase().replace(/@.*$/, '');\nif (comando === '/start' || comando === '/aiuto') {\n  return messaggio(`Ciao ${base.nome}! Sono l'assistente di Gedosan.\\n\\n`\n    + 'Posso dirti quali centri ci sono, quando sono aperti e se ci sono posti liberi.\\n\\n'\n    + 'Se hai già donato con noi, scrivi /collega: potrai sapere quando puoi donare di nuovo, '\n    + 'vedere i tuoi appuntamenti e prenotare da qui.\\n\\n'\n    + `È la tua prima donazione? Prenota dal sito: ${SITO}/prenota`);\n}\nif (comando === '/collega') {\n  return messaggio('Per accedere ai tuoi dati devo verificare chi sei.\\n\\n'\n    + 'Scrivimi in un solo messaggio il tuo codice fiscale e l\\'email che hai usato per prenotare, '\n    + `separati da una virgola. Esempio:\\n${ESEMPIO}\\n\\n`\n    + `Se è la tua prima donazione, prenota dal sito: ${SITO}/prenota`);\n}\nif (comando === '/esci') return esci(2, {});\n\n// Filtro privacy: messaggi con codice fiscale, email o codici numerici seguono il ramo fisso e non\n// arrivano mai all'assistente AI.\nconst CF = /\\b[a-z]{6}[0-9lmnpqrstuv]{2}[a-z][0-9lmnpqrstuv]{2}[a-z][0-9lmnpqrstuv]{3}[a-z]\\b/i;\nconst EMAIL = /[^\\s,;]+@[^\\s,;]+\\.[^\\s,;]+/;\nconst cf = testo.match(CF);\nconst email = testo.match(EMAIL);\nif (cf && email) return esci(3, { cf: cf[0], email: email[0] });\nconst soloCifre = testo.replace(/\\s/g, '');\nif (/^\\d{6}$/.test(soloCifre)) return esci(4, { codice: soloCifre });\nif (cf || email || /\\d{6}/.test(soloCifre)) {\n  return messaggio('Per proteggere i tuoi dati non passo codici fiscali, email o codici all\\'assistente.\\n\\n'\n    + 'Per collegarti scrivi codice fiscale ed email in un solo messaggio, separati da una virgola:\\n' + ESEMPIO);\n}\nreturn esci(5, { testo });\n",
+        "mode": "runOnceForEachItem"
+      }
+    },
+    {
+      "id": "fa693745-e11e-5fee-9d1e-86270cabdf19",
+      "name": "Smista",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        440,
+        400
+      ],
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 7,
+        "output": "={{ $json.uscita }}"
+      }
+    },
+    {
+      "id": "2962a2f3-0f12-59cc-8b18-557581db1e89",
+      "name": "Invia risposta",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1540,
+        160
+      ],
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.messaggio }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram - Gedosan bot"
+        }
+      }
+    },
+    {
+      "id": "222311aa-9d0e-5116-9651-ad49605e377e",
+      "name": "Invia con pulsanti",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        960
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TELEGRAM_API_URL || 'https://api.telegram.org' }}/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.chatId, text: $json.messaggio, parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: { inline_keyboard: $json.pulsanti } }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "9f71a85e-d1c7-5bab-84b3-867ca210128d",
+      "name": "Scollega",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        160
+      ],
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ $json.api }}/api/bot/collegamento/{{ $json.chatId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Gedosan API - X-Bot-Key"
+        }
+      }
+    },
+    {
+      "id": "f1101654-de88-5d2a-988a-f0a2b9030cb3",
+      "name": "Testo scollegato",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        160
+      ],
+      "parameters": {
+        "jsCode": "function testoErrore(r) {\n  if (r.statusCode && r.statusCode < 500 && r.body && r.body.messaggio) return r.body.messaggio;\n  return 'Il servizio di prenotazione non risponde. Riprova tra qualche minuto.';\n}\nconst n = $('Normalizza').first().json;\nconst messaggio = $json.statusCode === 204\n  ? 'Fatto: questa chat non è più collegata ai tuoi dati. Per ricollegarla scrivi /collega.'\n  : testoErrore($json);\nreturn { json: { chatId: n.chatId, messaggio } };\n",
+        "mode": "runOnceForEachItem"
+      }
+    },
+    {
+      "id": "b61e7100-3cdd-52e3-b87c-284bd8575575",
+      "name": "Chiedi codice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        320
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.api }}/api/bot/collegamento/richiesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chatId: $json.chatId, codiceFiscale: $json.cf, email: $json.email }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Gedosan API - X-Bot-Key"
+        }
+      }
+    },
+    {
+      "id": "6584c3a6-6ee5-5b23-b817-b3d8661a00a7",
+      "name": "Testo codice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        320
+      ],
+      "parameters": {
+        "jsCode": "function testoErrore(r) {\n  if (r.statusCode && r.statusCode < 500 && r.body && r.body.messaggio) return r.body.messaggio;\n  return 'Il servizio di prenotazione non risponde. Riprova tra qualche minuto.';\n}\nconst n = $('Normalizza').first().json;\nconst messaggio = $json.statusCode === 202 ? $json.body.messaggio : testoErrore($json);\nreturn { json: { chatId: n.chatId, messaggio } };\n",
+        "mode": "runOnceForEachItem"
+      }
+    },
+    {
+      "id": "61aa683a-e4ae-5aa4-81c3-113954fb11cb",
+      "name": "Verifica codice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        480
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.api }}/api/bot/collegamento/verifica",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chatId: $json.chatId, codice: $json.codice }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Gedosan API - X-Bot-Key"
+        }
+      }
+    },
+    {
+      "id": "ff289076-cbb1-50fe-8d8a-67144f89adbf",
+      "name": "Testo verifica",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        480
+      ],
+      "parameters": {
+        "jsCode": "function testoErrore(r) {\n  if (r.statusCode && r.statusCode < 500 && r.body && r.body.messaggio) return r.body.messaggio;\n  return 'Il servizio di prenotazione non risponde. Riprova tra qualche minuto.';\n}\nconst n = $('Normalizza').first().json;\nlet messaggio = testoErrore($json);\nif ($json.statusCode === 200) {\n  const fino = DateTime.fromISO($json.body.validoFinoAl).setLocale('it').toFormat('d LLLL yyyy');\n  messaggio = `✅ Fatto, ciao ${$json.body.nome}! Ora puoi chiedermi quando puoi donare, vedere i tuoi `\n    + `appuntamenti o prenotare.\\n\\nResti collegato fino al ${fino}. Per scollegarti scrivi /esci.`;\n}\nreturn { json: { chatId: n.chatId, messaggio } };\n",
+        "mode": "runOnceForEachItem"
+      }
+    },
+    {
+      "id": "ae508471-1c48-5c76-b035-70df59cb9952",
+      "name": "Assistente",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        660,
+        700
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.testo }}",
+        "options": {
+          "systemMessage": "=Sei l'assistente di Gedosan, il servizio per prenotare le donazioni di sangue intero nei centri trasfusionali. Oggi è {{ $now.setZone('Europe/Rome').setLocale('it').toFormat('cccc d LLLL yyyy') }} ({{ $now.setZone('Europe/Rome').toFormat('yyyy-MM-dd') }}).\n\nCome rispondi:\n- In italiano, in testo semplice, senza Markdown né tabelle, al massimo 5-6 righe. Le date scrivile come \"giovedì 23 ottobre\".\n- Per centri, giorni di apertura, orari liberi e dati del donatore usa sempre gli strumenti: non inventare mai dati.\n\nDati personali e collegamento:\n- Non chiedere mai codice fiscale, email o codici. Se serve un dato personale e la chat non è collegata (gli strumenti personali rispondono che la chat non è collegata), spiega di scrivere /collega.\n- Chi non ha mai donato con noi prenota dal sito: {{ $json.sito }}/prenota\n\nPrenotazione:\n- Tu non prenoti: proponi gli orari e la persona conferma con i pulsanti.\n- Prima controlla con mio_stato che la persona sia collegata e che la data richiesta non sia precedente a prossimaDataUtile. Se lo è, spiega il motivo e indica da quando può prenotare.\n- Se mancano centro o giorno, chiedili. Se il giorno è chiuso o pieno, proponi altri giorni vicini usando giorni_chiusi e orari_liberi.\n- Quando hai un centro e un giorno con almeno un orario libero, scrivi una frase breve e chiudi la risposta con questa riga esatta, da sola: PROPONI_ORARI|<id del centro>|<giorno in formato AAAA-MM-GG>\n- Non puoi annullare né spostare appuntamenti: indica di contattare il centro e dai il suo telefono (strumento centri).\n\nDomande frequenti (rispondi solo con queste informazioni; per tutto il resto, soprattutto se riguarda la salute, consiglia di chiedere al medico del centro):\n- Chi può donare: persone tra 18 e 65 anni, con almeno 50 kg di peso e in buona salute. L'idoneità la conferma il medico del centro con un colloquio e un controllo prima del prelievo.\n- Cosa portare: un documento d'identità e la tessera sanitaria.\n- Colazione: leggera, ad esempio tè o caffè poco zuccherati, succo di frutta, fette biscottate o pane con marmellata. Evitare latte, latticini e cibi grassi.\n- Durata: circa un'ora in tutto; il prelievo dura circa 10 minuti.\n- Ogni quanto: almeno 90 giorni tra una donazione e l'altra; le donatrici al massimo 2 donazioni in 12 mesi.\n- Dopo la donazione: bere molti liquidi ed evitare sforzi fisici intensi per il resto della giornata.\n- Promemoria: il giorno prima dell'appuntamento arriva un'email di promemoria.",
+          "maxIterations": 8,
+          "enableStreaming": false
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "4cf07fd7-243d-5aa0-ad02-78327e0c1aeb",
+      "name": "Claude",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.6,
+      "position": [
+        520,
+        960
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "claude-opus-5-5"
+        },
+        "options": {
+          "thinkingMode": "adaptive",
+          "effort": "low",
+          "maxTokensToSample": 4096
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "name": "Anthropic"
+        }
+      }
+    },
+    {
+      "id": "aeac0912-3f70-58b0-a845-1d65a6a2c7de",
+      "name": "Memoria chat",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        660,
+        960
+      ],
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ 'chat-' + $json.chatId }}",
+        "contextWindowLength": 10
+      }
+    },
+    {
+      "id": "26142131-0f03-503f-845b-558952315ecd",
+      "name": "centri",
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        960
+      ],
+      "parameters": {
+        "toolDescription": "Elenco dei centri trasfusionali: id, nome, indirizzo e telefono.",
+        "method": "GET",
+        "url": "=http://gedosan-api:8080/api/trasfusionali",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Gedosan API - X-Bot-Key"
+        }
+      }
+    },
+    {
+      "id": "3d202bdb-a435-5088-a18a-d8e35558bd1b",
+      "name": "giorni_chiusi",
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        960
+      ],
+      "parameters": {
+        "toolDescription": "Giorni di un mese in cui il centro è chiuso o senza posti.",
+        "method": "GET",
+        "url": "=http://gedosan-api:8080/api/trasfusionali/{{ $fromAI('idTrasfusionale', 'Id numerico del centro', 'number') }}/giorni-non-disponibili?mese={{ $fromAI('mese', 'Mese nel formato AAAA-MM', 'string') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Gedosan API - X-Bot-Key"
+        }
+      }
+    },
+    {
+      "id": "ad6bece2-2f21-58e6-a726-3676589ae37c",
+      "name": "orari_liberi",
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        1020,
+        960
+      ],
+      "parameters": {
+        "toolDescription": "Orari di un giorno per un centro, con i posti liberi. Risponde con un errore se il centro è chiuso.",
+        "method": "GET",
+        "url": "=http://gedosan-api:8080/api/trasfusionali/{{ $fromAI('idTrasfusionale', 'Id numerico del centro', 'number') }}/slot?data={{ $fromAI('data', 'Giorno nel formato AAAA-MM-GG', 'string') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Gedosan API - X-Bot-Key"
+        }
+      }
+    },
+    {
+      "id": "881a91ff-49ab-5e71-932b-a4f235b4678d",
+      "name": "mio_stato",
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        960
+      ],
+      "parameters": {
+        "toolDescription": "Stato del donatore che sta scrivendo: nome, prossima data in cui può donare con il motivo, prossimo appuntamento. Se la chat non è collegata risponde con un errore.",
+        "method": "GET",
+        "url": "=http://gedosan-api:8080/api/bot/chat/{{ $('Normalizza').first().json.chatId }}/stato",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Gedosan API - X-Bot-Key"
+        }
+      }
+    },
+    {
+      "id": "1c5131fa-cbd8-5c48-97f3-3e1d3464395a",
+      "name": "mie_prenotazioni",
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        1260,
+        960
+      ],
+      "parameters": {
+        "toolDescription": "Ultime prenotazioni del donatore che sta scrivendo, dalla più recente.",
+        "method": "GET",
+        "url": "=http://gedosan-api:8080/api/bot/chat/{{ $('Normalizza').first().json.chatId }}/prenotazioni",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Gedosan API - X-Bot-Key"
+        }
+      }
+    },
+    {
+      "id": "4553f0de-76f7-5156-a559-d3faf3343e5f",
+      "name": "Prepara risposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        700
+      ],
+      "parameters": {
+        "jsCode": "const n = $('Normalizza').first().json;\nconst testo = String($json.output || '');\nconst proposta = testo.match(/PROPONI_ORARI\\|(\\d+)\\|(\\d{4}-\\d{2}-\\d{2})/);\nconst escape = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nlet messaggio = escape(testo.replace(/^.*PROPONI_ORARI.*$/m, '').trim());\nif (!testo) messaggio = 'Scusa, in questo momento non riesco a rispondere. Riprova tra poco.';\nif (!messaggio && proposta) messaggio = 'Ecco gli orari disponibili.';\nreturn { json: { chatId: n.chatId, api: n.api, messaggio,\n  proposta: !!proposta, idTrasfusionale: proposta && Number(proposta[1]), data: proposta && proposta[2] } };\n",
+        "mode": "runOnceForEachItem"
+      }
+    },
+    {
+      "id": "36c1cd47-5893-52ea-af91-aa9bc12e9527",
+      "name": "Invia risposta assistente",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1100,
+        700
+      ],
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.messaggio }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram - Gedosan bot"
+        }
+      }
+    },
+    {
+      "id": "fa5e73af-bcd8-5ab7-b922-fbd67cb1a477",
+      "name": "Ha proposto orari?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        700
+      ],
+      "parameters": {
+        "jsCode": "const p = $('Prepara risposta').first().json;\nreturn p.proposta ? [{ json: p }] : [];\n"
+      }
+    },
+    {
+      "id": "fb2e02f8-4f06-54ab-a4c6-e235075343e9",
+      "name": "Leggi orari",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        860
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.api }}/api/trasfusionali/{{ $json.idTrasfusionale }}/slot?data={{ $json.data }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Gedosan API - X-Bot-Key"
+        }
+      }
+    },
+    {
+      "id": "80422196-57d1-5723-abba-ddb8a7d33c1b",
+      "name": "Pulsanti orari",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        860
+      ],
+      "parameters": {
+        "jsCode": "function testoErrore(r) {\n  if (r.statusCode && r.statusCode < 500 && r.body && r.body.messaggio) return r.body.messaggio;\n  return 'Il servizio di prenotazione non risponde. Riprova tra qualche minuto.';\n}\nconst p = $('Ha proposto orari?').first().json;\nif ($json.statusCode !== 200) return { json: { chatId: p.chatId, messaggio: testoErrore($json), pulsanti: [] } };\nconst liberi = $json.body.filter(s => s.disponibile && s.postiLiberi > 0);\nconst bottoni = liberi.map(s => ({ text: s.orario.slice(0, 5), callback_data: 'slot:' + s.idSlot }));\nconst pulsanti = [];\nfor (let i = 0; i < bottoni.length; i += 4) pulsanti.push(bottoni.slice(i, i + 4));\nconst giorno = DateTime.fromISO(p.data).setLocale('it').toFormat('cccc d LLLL');\nconst messaggio = pulsanti.length ? `Orari liberi per ${giorno}: scegline uno.` : `Per ${giorno} non ci sono più orari liberi.`;\nreturn { json: { chatId: p.chatId, messaggio, pulsanti } };\n",
+        "mode": "runOnceForEachItem"
+      }
+    },
+    {
+      "id": "9ecf05b0-9731-5a52-8595-595300f70af0",
+      "name": "Ferma la rotellina",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        1180
+      ],
+      "parameters": {
+        "resource": "callback",
+        "operation": "answerQuery",
+        "queryId": "={{ $json.queryId }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram - Gedosan bot"
+        }
+      }
+    },
+    {
+      "id": "b9c60de9-7308-5f80-9d79-396ec79cbf96",
+      "name": "Quale pulsante",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        880,
+        1180
+      ],
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ ({ slot: 0, conf: 1 })[$('Normalizza').first().json.azione] ?? 2 }}"
+      }
+    },
+    {
+      "id": "a0647d9b-a73e-58e7-b8e1-1ffd5983c3dc",
+      "name": "Leggi slot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        1100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Normalizza').first().json.api }}/api/bot/slot/{{ $('Normalizza').first().json.valore }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Gedosan API - X-Bot-Key"
+        }
+      }
+    },
+    {
+      "id": "6e99d4f1-e9e0-5e1e-b2ef-0c53eef2d7e6",
+      "name": "Riepilogo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        1100
+      ],
+      "parameters": {
+        "jsCode": "function testoErrore(r) {\n  if (r.statusCode && r.statusCode < 500 && r.body && r.body.messaggio) return r.body.messaggio;\n  return 'Il servizio di prenotazione non risponde. Riprova tra qualche minuto.';\n}\nconst n = $('Normalizza').first().json;\nif ($json.statusCode !== 200) return { json: { chatId: n.chatId, messaggio: testoErrore($json), pulsanti: [] } };\nconst s = $json.body;\nconst giorno = DateTime.fromISO(s.data).setLocale('it').toFormat('cccc d LLLL yyyy');\nconst messaggio = `Confermi la prenotazione?\\n\\n<b>${s.centro}</b>\\n${s.indirizzo}\\n${giorno} alle ${s.orario.slice(0, 5)}`;\nconst pulsanti = [[{ text: '✅ Conferma', callback_data: 'conf:' + s.idSlot }, { text: 'Annulla', callback_data: 'annulla' }]];\nreturn { json: { chatId: n.chatId, messaggio, pulsanti } };\n",
+        "mode": "runOnceForEachItem"
+      }
+    },
+    {
+      "id": "45d3ccbf-437b-573a-b1c6-0a2476b4c85f",
+      "name": "Prenota",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        1260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Normalizza').first().json.api }}/api/bot/chat/{{ $('Normalizza').first().json.chatId }}/prenotazioni",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ idSlot: $('Normalizza').first().json.valore }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Gedosan API - X-Bot-Key"
+        }
+      }
+    },
+    {
+      "id": "a606693b-b75a-508c-89e7-a28f1809b816",
+      "name": "Esito prenotazione",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        1260
+      ],
+      "parameters": {
+        "jsCode": "function testoErrore(r) {\n  if (r.statusCode && r.statusCode < 500 && r.body && r.body.messaggio) return r.body.messaggio;\n  return 'Il servizio di prenotazione non risponde. Riprova tra qualche minuto.';\n}\nconst n = $('Normalizza').first().json;\nlet messaggio = testoErrore($json);\nif ($json.statusCode === 201) {\n  const p = $json.body;\n  const giorno = DateTime.fromISO(p.data).setLocale('it').toFormat('cccc d LLLL yyyy');\n  messaggio = `✅ Prenotato! Ti aspettiamo ${giorno} alle ${p.orario.slice(0, 5)} al ${p.centro} (${p.indirizzo}).\\n\\n`\n    + `Ti abbiamo mandato l'email di conferma; il giorno prima riceverai un promemoria. `\n    + `Per annullare o spostare chiama il centro: ${p.telefono}.`;\n}\nreturn { json: { chatId: n.chatId, messaggio } };\n",
+        "mode": "runOnceForEachItem"
+      }
+    },
+    {
+      "id": "c08f4c95-8a1a-54c5-970c-b050212f17be",
+      "name": "Annullata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        1420
+      ],
+      "parameters": {
+        "jsCode": "const n = $('Normalizza').first().json;\nreturn { json: { chatId: n.chatId, messaggio: 'Va bene, non ho prenotato nulla.' } };\n",
+        "mode": "runOnceForEachItem"
+      }
+    }
+  ],
+  "connections": {
+    "Telegram": {
+      "main": [
+        [
+          {
+            "node": "Normalizza",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizza": {
+      "main": [
+        [
+          {
+            "node": "Smista",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Smista": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Invia risposta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Scollega",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chiedi codice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Verifica codice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Assistente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ferma la rotellina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scollega": {
+      "main": [
+        [
+          {
+            "node": "Testo scollegato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Testo scollegato": {
+      "main": [
+        [
+          {
+            "node": "Invia risposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chiedi codice": {
+      "main": [
+        [
+          {
+            "node": "Testo codice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Testo codice": {
+      "main": [
+        [
+          {
+            "node": "Invia risposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verifica codice": {
+      "main": [
+        [
+          {
+            "node": "Testo verifica",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Testo verifica": {
+      "main": [
+        [
+          {
+            "node": "Invia risposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Assistente",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memoria chat": {
+      "ai_memory": [
+        [
+          {
+            "node": "Assistente",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "centri": {
+      "ai_tool": [
+        [
+          {
+            "node": "Assistente",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "giorni_chiusi": {
+      "ai_tool": [
+        [
+          {
+            "node": "Assistente",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "orari_liberi": {
+      "ai_tool": [
+        [
+          {
+            "node": "Assistente",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mio_stato": {
+      "ai_tool": [
+        [
+          {
+            "node": "Assistente",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mie_prenotazioni": {
+      "ai_tool": [
+        [
+          {
+            "node": "Assistente",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assistente": {
+      "main": [
+        [
+          {
+            "node": "Prepara risposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepara risposta": {
+      "main": [
+        [
+          {
+            "node": "Invia risposta assistente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invia risposta assistente": {
+      "main": [
+        [
+          {
+            "node": "Ha proposto orari?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ha proposto orari?": {
+      "main": [
+        [
+          {
+            "node": "Leggi orari",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leggi orari": {
+      "main": [
+        [
+          {
+            "node": "Pulsanti orari",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pulsanti orari": {
+      "main": [
+        [
+          {
+            "node": "Invia con pulsanti",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ferma la rotellina": {
+      "main": [
+        [
+          {
+            "node": "Quale pulsante",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quale pulsante": {
+      "main": [
+        [
+          {
+            "node": "Leggi slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prenota",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Annullata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leggi slot": {
+      "main": [
+        [
+          {
+            "node": "Riepilogo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Riepilogo": {
+      "main": [
+        [
+          {
+            "node": "Invia con pulsanti",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prenota": {
+      "main": [
+        [
+          {
+            "node": "Esito prenotazione",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esito prenotazione": {
+      "main": [
+        [
+          {
+            "node": "Invia risposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Annullata": {
+      "main": [
+        [
+          {
+            "node": "Invia risposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Rome",
+    "saveDataSuccessExecution": "none"
+  },
+  "pinData": {}
+}
