@@ -251,29 +251,24 @@
       "onError": "continueRegularOutput"
     },
     {
-      "id": "4cf07fd7-243d-5aa0-ad02-78327e0c1aeb",
-      "name": "Claude",
-      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
-      "typeVersion": 1.6,
+      "id": "606be687-a4ec-5451-a8aa-3862bc11015c",
+      "name": "Modello AI",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
       "position": [
         520,
         960
       ],
       "parameters": {
-        "model": {
-          "__rl": true,
-          "mode": "id",
-          "value": "claude-opus-5-5"
-        },
+        "modelName": "models/gemini-3-flash-preview",
         "options": {
-          "thinkingMode": "adaptive",
-          "effort": "low",
-          "maxTokensToSample": 4096
+          "maxOutputTokens": 2048,
+          "temperature": 0.3
         }
       },
       "credentials": {
-        "anthropicApi": {
-          "name": "Anthropic"
+        "googlePalmApi": {
+          "name": "Google Gemini"
         }
       }
     },
@@ -807,7 +802,7 @@
         ]
       ]
     },
-    "Claude": {
+    "Modello AI": {
       "ai_languageModel": [
         [
           {
