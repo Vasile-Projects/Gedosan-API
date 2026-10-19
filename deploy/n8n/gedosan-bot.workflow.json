@@ -254,22 +254,27 @@
     {
       "id": "606be687-a4ec-5451-a8aa-3862bc11015c",
       "name": "Modello AI",
-      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1.2,
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.6,
       "position": [
         460,
         960
       ],
       "parameters": {
-        "modelName": "models/gemini-3.8-flash",
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "claude-haiku-5-5"
+        },
         "options": {
-          "maxOutputTokens": 2048,
-          "temperature": 0.3
+          "thinkingMode": "adaptive",
+          "effort": "low",
+          "maxTokensToSample": 4096
         }
       },
       "credentials": {
-        "googlePalmApi": {
-          "name": "Google Gemini"
+        "anthropicApi": {
+          "name": "Anthropic"
         }
       }
     },

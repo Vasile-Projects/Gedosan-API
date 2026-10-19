@@ -21,7 +21,7 @@ Telegram ──webhook (token segreto)──▶ n8n ──rete interna, X-Bot-Ke
 
 - Il `chatId` lo prende il nodo **Normalizza** dall'aggiornamento di Telegram. n8n accetta solo gli aggiornamenti con il token segreto registrato sul webhook, quindi nessuno può spacciarsi per un'altra chat. Gli strumenti personali inseriscono il `chatId` da soli; il modello sceglie solo centro, mese e giorno.
 - **L'AI non prenota.** Quando ha un centro e un giorno con posti liberi chiude la risposta con `PROPONI_ORARI|<id centro>|<data>`. I pulsanti li costruisce il codice, e la prenotazione parte solo dal tocco su **Conferma**.
-- Modello: **Google Gemini** (piano gratuito): `gemini-3.8-flash` nel nodo **Modello AI**, con `gemini-3-flash-preview` nel nodo **Modello di riserva**, usato in automatico se il primo dà errore (per esempio quota giornaliera esaurita). La quota è per progetto e per modello, condivisa da tutti gli utenti del bot. Per passare a Claude si sostituisce solo quel nodo con *Anthropic Chat Model* (`claude-opus-5-5`, thinking adaptive, effort `low`): istruzioni, strumenti e memoria restano uguali. Nel piano gratuito Google può usare i messaggi per migliorare i modelli; qui è accettabile perché CF, email e codici non arrivano mai all'AI.
+- Modello: **Claude Haiku 5.5** (`claude-haiku-5-5`, thinking adaptive, effort `low`, circa un decimo di centesimo a domanda) nel nodo **Modello AI**, con **Gemini** gratuito (`gemini-3-flash-preview`) nel nodo **Modello di riserva**, usato in automatico se il primo dà errore. Per Gemini la quota gratuita è per progetto e per modello (20 richieste al giorno nel 2026-10). La quota è per progetto e per modello, condivisa da tutti gli utenti del bot. Per passare a Claude si sostituisce solo quel nodo con *Anthropic Chat Model* (`claude-opus-5-5`, thinking adaptive, effort `low`): istruzioni, strumenti e memoria restano uguali. Nel piano gratuito Google può usare i messaggi per migliorare i modelli; qui è accettabile perché CF, email e codici non arrivano mai all'AI.
 - La memoria della chat (ultimi 10 scambi) sta nella RAM di n8n e si azzera al riavvio.
 
 ## Messa in produzione
@@ -42,10 +42,11 @@ Telegram ──webhook (token segreto)──▶ n8n ──rete interna, X-Bot-Ke
    - In Nginx Proxy Manager crea un proxy host `n8n.vszdev.it` → `<server>:8085`, con Websockets attivi.
    - Nel tunnel Cloudflare aggiungi l'hostname pubblico `n8n.vszdev.it` con **Path** `webhook/.*`, verso NPM come per gli altri sottodomini. Da internet si raggiunge così solo `/webhook/…`.
    - L'editor si apre dalla LAN su `http://<server>:8085`.
-5. **Credenziali in n8n.** Dall'editor crea le tre credenziali (il nome non conta: dopo l'import si assegnano nodo per nodo):
+5. **Credenziali in n8n.** Dall'editor crea le quattro credenziali (il nome non conta: dopo l'import si assegnano nodo per nodo):
    - **Telegram - Gedosan bot** (Telegram API): il token del bot;
    - **Gedosan API - X-Bot-Key** (Header Auth): nome `X-Bot-Key`, valore uguale a `BOT_API_KEY`;
-   - **Google Gemini(PaLM) API**: la chiave creata su aistudio.google.com.
+   - **Anthropic API**: la chiave della console Anthropic (con credito e tetto di spesa);
+   - **Google Gemini(PaLM) API**: la chiave creata su aistudio.google.com, per il modello di riserva.
 6. **Workflow.** Importa `gedosan-bot.workflow.json`, controlla che ogni nodo abbia la sua credenziale e attivalo. All'attivazione n8n registra da solo il webhook su Telegram.
 
 ## Limiti consapevoli
