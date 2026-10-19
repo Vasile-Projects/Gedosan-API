@@ -242,6 +242,7 @@
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.testo }}",
+        "needsFallback": true,
         "options": {
           "systemMessage": "=Sei l'assistente di Gedosan, il servizio per prenotare le donazioni di sangue intero nei centri trasfusionali. Oggi è {{ $now.setZone('Europe/Rome').setLocale('it').toFormat('cccc d LLLL yyyy') }} ({{ $now.setZone('Europe/Rome').toFormat('yyyy-MM-dd') }}).\n\nCome rispondi:\n- In italiano, in testo semplice, senza Markdown né tabelle, al massimo 5-6 righe. Le date scrivile come \"giovedì 23 ottobre\".\n- Per centri, giorni di apertura, orari liberi e dati del donatore usa sempre gli strumenti: non inventare mai dati.\n\nDati personali e collegamento:\n- Non chiedere mai codice fiscale, email o codici. Se serve un dato personale e la chat non è collegata (gli strumenti personali rispondono che la chat non è collegata), spiega di scrivere /collega.\n- Chi non ha mai donato con noi prenota dal sito: {{ $json.sito }}/prenota\n\nPrenotazione:\n- Tu non prenoti: proponi gli orari e la persona conferma con i pulsanti.\n- Prima controlla con mio_stato che la persona sia collegata e che la data richiesta non sia precedente a prossimaDataUtile. Se lo è, spiega il motivo e indica da quando può prenotare.\n- Se mancano centro o giorno, chiedili. Se il giorno è chiuso o pieno, proponi altri giorni vicini usando giorni_chiusi e orari_liberi.\n- Quando hai un centro e un giorno con almeno un orario libero, scrivi una frase breve e chiudi la risposta con questa riga esatta, da sola: PROPONI_ORARI|<id del centro>|<giorno in formato AAAA-MM-GG>\n- Non puoi annullare né spostare appuntamenti: indica di contattare il centro e dai il suo telefono (strumento centri).\n\nDomande frequenti (rispondi solo con queste informazioni; per tutto il resto, soprattutto se riguarda la salute, consiglia di chiedere al medico del centro):\n- Chi può donare: persone tra 18 e 65 anni, con almeno 50 kg di peso e in buona salute. L'idoneità la conferma il medico del centro con un colloquio e un controllo prima del prelievo.\n- Cosa portare: un documento d'identità e la tessera sanitaria.\n- Colazione: leggera, ad esempio tè o caffè poco zuccherati, succo di frutta, fette biscottate o pane con marmellata. Evitare latte, latticini e cibi grassi.\n- Durata: circa un'ora in tutto; il prelievo dura circa 10 minuti.\n- Ogni quanto: almeno 90 giorni tra una donazione e l'altra; le donatrici al massimo 2 donazioni in 12 mesi.\n- Dopo la donazione: bere molti liquidi ed evitare sforzi fisici intensi per il resto della giornata.\n- Promemoria: il giorno prima dell'appuntamento arriva un'email di promemoria.",
           "maxIterations": 8,
@@ -256,8 +257,30 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1.2,
       "position": [
-        520,
+        460,
         960
+      ],
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "maxOutputTokens": 2048,
+          "temperature": 0.3
+        }
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "name": "Google Gemini"
+        }
+      }
+    },
+    {
+      "id": "832a62ba-0fea-57d4-abcd-c391cbe929c3",
+      "name": "Modello di riserva",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        580,
+        1080
       ],
       "parameters": {
         "modelName": "models/gemini-3-flash-preview",
@@ -442,7 +465,7 @@
         700
       ],
       "parameters": {
-        "jsCode": "const n = $('Normalizza').first().json;\nconst testo = String($json.output || '');\nconst proposta = testo.match(/PROPONI_ORARI\\|(\\d+)\\|(\\d{4}-\\d{2}-\\d{2})/);\nconst escape = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nlet messaggio = escape(testo.replace(/^.*PROPONI_ORARI.*$/m, '').trim());\nif (!testo) messaggio = 'Scusa, in questo momento non riesco a rispondere. Riprova tra poco.';\nif (!messaggio && proposta) messaggio = 'Ecco gli orari disponibili.';\nreturn { json: { chatId: n.chatId, api: n.api, messaggio,\n  proposta: !!proposta, idTrasfusionale: proposta && Number(proposta[1]), data: proposta && proposta[2] } };\n",
+        "jsCode": "const n = $('Normalizza').first().json;\nconst testo = String($json.output || '');\nconst proposta = testo.match(/PROPONI_ORARI\\|(\\d+)\\|(\\d{4}-\\d{2}-\\d{2})/);\nconst escape = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nlet messaggio = escape(testo.replace(/^.*PROPONI_ORARI.*$/m, '').trim());\nif (!testo) messaggio = 'L\\'assistente in questo momento non è disponibile. Puoi comunque usare /collega '\n  + `e i pulsanti degli orari, oppure prenotare dal sito: ${n.sito}/prenota`;\nif (!messaggio && proposta) messaggio = 'Ecco gli orari disponibili.';\nreturn { json: { chatId: n.chatId, api: n.api, messaggio,\n  proposta: !!proposta, idTrasfusionale: proposta && Number(proposta[1]), data: proposta && proposta[2] } };\n",
         "mode": "runOnceForEachItem"
       }
     },
@@ -798,6 +821,17 @@
             "node": "Invia risposta",
             "type": "main",
             "index": 0
+          }
+        ]
+      ]
+    },
+    "Modello di riserva": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Assistente",
+            "type": "ai_languageModel",
+            "index": 1
           }
         ]
       ]
