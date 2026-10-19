@@ -261,7 +261,7 @@
         960
       ],
       "parameters": {
-        "modelName": "models/gemini-2.5-flash",
+        "modelName": "models/gemini-3.8-flash",
         "options": {
           "maxOutputTokens": 2048,
           "temperature": 0.3
