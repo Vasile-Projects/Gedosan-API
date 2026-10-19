@@ -5,6 +5,7 @@ import it.vszdev.gedosanapi.dto.PrenotazioneRequest;
 import it.vszdev.gedosanapi.dto.donatore.DatiDonatoreRequest;
 import it.vszdev.gedosanapi.dto.donatore.PrenotazioneResponse;
 import it.vszdev.gedosanapi.dto.email.ConfermaPrenotazioneEmailPayload;
+import it.vszdev.gedosanapi.enums.CanalePrenotazione;
 import it.vszdev.gedosanapi.enums.TipoAvviso;
 import it.vszdev.gedosanapi.events.AvvisoPrenotazioneEvent;
 import it.vszdev.gedosanapi.events.LinkConfermaEvent;
@@ -180,7 +181,7 @@ public class RichiestaPrenotazioneService {
         prenotazioneService.ricalcolaPostiOccupati(slot);
         prenotazioneService.validaSlotPrenotabile(slot, donatore, null, false);
 
-        Prenotazione prenotazione = new Prenotazione(donatore, slot, attesa.getTipoDonazione());
+        Prenotazione prenotazione = new Prenotazione(donatore, slot, attesa.getTipoDonazione(), CanalePrenotazione.SITO);
         prenotazioneRepository.save(prenotazione);
         prenotazioneService.ricalcolaPostiOccupati(slot);
 

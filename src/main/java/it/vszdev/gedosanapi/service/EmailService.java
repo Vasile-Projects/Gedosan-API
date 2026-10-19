@@ -1,7 +1,9 @@
 package it.vszdev.gedosanapi.service;
 
 import it.vszdev.gedosanapi.dto.email.ConfermaPrenotazioneEmailPayload;
+import it.vszdev.gedosanapi.enums.CanalePrenotazione;
 import it.vszdev.gedosanapi.events.AvvisoPrenotazioneEvent;
+import it.vszdev.gedosanapi.events.CodiceCollegamentoEvent;
 import it.vszdev.gedosanapi.events.LinkConfermaEvent;
 import it.vszdev.gedosanapi.enums.EsitoInvioEmail;
 import it.vszdev.gedosanapi.models.LogEmail;
@@ -24,15 +26,18 @@ public class EmailService {
     private final LogEmailRepository logEmailRepository;
     private final String mittente;
     private final String frontendUrl;
+    private final String telegramUrl;
 
     public EmailService(JavaMailSender mailSender,
                          LogEmailRepository logEmailRepository,
                          @Value("${mail.mittente}") String mittente,
-                         @Value("${app.frontend-url}") String frontendUrl) {
+                         @Value("${app.frontend-url}") String frontendUrl,
+                         @Value("${bot.telegram-url:}") String telegramUrl) {
         this.mailSender = mailSender;
         this.logEmailRepository = logEmailRepository;
         this.mittente = mittente;
         this.frontendUrl = frontendUrl.endsWith("/") ? frontendUrl.substring(0, frontendUrl.length() - 1) : frontendUrl;
+        this.telegramUrl = telegramUrl;
     }
 
     // La prenotazione è già committata: un fallimento SMTP va solo loggato in log_email, mai propagato.
@@ -106,7 +111,51 @@ public class EmailService {
         invia(event.email(), "Richiesta di prenotazione non accettata", corpo, "avviso " + event.tipo());
     }
 
-    private void invia(String destinatario, String oggetto, String corpo, String descrizione) {
+    public void inviaCodiceCollegamento(CodiceCollegamentoEvent event) {
+        String corpo = """
+                Gentile %s,
+
+                il tuo codice per collegare Telegram all'assistente Gedosan è:
+
+                %s
+
+                Scrivilo nella chat entro %d minuti. Dopo il collegamento potrai vedere le tue prenotazioni
+                e prenotare direttamente da Telegram.
+
+                Se non l'hai richiesto tu, ignora questa email: senza il codice nessuna chat viene collegata.
+                Non comunicare il codice a nessuno.
+                """.formatted(event.nome(), event.codice(), event.minutiValidita());
+        invia(event.email(), "Il tuo codice per Telegram: " + event.codice(), corpo, "codice di collegamento");
+    }
+
+    // Promemoria del giorno prima (PromemoriaJob). Restituisce l'esito per non segnarlo come inviato
+    // se l'SMTP fallisce: il job lo ritenta al passaggio successivo.
+    public boolean inviaPromemoria(ConfermaPrenotazioneEmailPayload payload) {
+        String corpo = """
+                Gentile %s,
+
+                ti ricordiamo l'appuntamento di domani per la donazione di sangue intero.
+
+                Centro trasfusionale: %s
+                Indirizzo: %s, %d
+                Data: %s
+                Orario: %s
+
+                Porta un documento d'identità e la tessera sanitaria. Se non puoi venire, avvisa il centro
+                al numero %s: il posto potrà essere offerto a un altro donatore.
+                """.formatted(
+                payload.nomeDonatore(),
+                payload.nomeTrasfusionale(),
+                payload.indirizzoTrasfusionale(),
+                payload.civicoTrasfusionale(),
+                payload.dataPrenotazione().format(FormatiData.DATA),
+                payload.orarioPrenotazione().format(FormatiData.ORARIO),
+                payload.telefonoTrasfusionale());
+        return invia(payload.emailDonatore(), "Promemoria: domani la tua donazione - " + payload.nomeTrasfusionale(),
+                corpo, "promemoria");
+    }
+
+    private boolean invia(String destinatario, String oggetto, String corpo, String descrizione) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(mittente);
         message.setTo(destinatario);
@@ -114,9 +163,11 @@ public class EmailService {
         message.setText(corpo);
         try {
             mailSender.send(message);
+            return true;
         } catch (MailException e) {
             // Solo il tipo di eccezione: il messaggio SMTP può contenere l'indirizzo del destinatario.
             log.warn("Invio email non riuscito ({}): {}", descrizione, e.getClass().getSimpleName());
+            return false;
         }
     }
 
@@ -130,6 +181,30 @@ public class EmailService {
     }
 
     private String corpoMessaggio(ConfermaPrenotazioneEmailPayload payload) {
+        return corpoConferma(payload) + notaCanale(payload.canale());
+    }
+
+    // Dal bot la prenotazione non passa dal link via email: questa email è anche l'avviso per il donatore
+    // nel caso qualcun altro usasse la sua chat. Dal sito invece si suggerisce il bot per la volta dopo.
+    private String notaCanale(CanalePrenotazione canale) {
+        if (canale == CanalePrenotazione.TELEGRAM) {
+            return """
+
+                    Hai prenotato tramite l'assistente Gedosan su Telegram. Se non sei stato tu, contatta
+                    il centro trasfusionale e scrivi /esci nella chat per scollegarla.
+                    """;
+        }
+        if (canale == CanalePrenotazione.SITO && telegramUrl != null && !telegramUrl.isBlank()) {
+            return """
+
+                    La prossima volta puoi prenotare in pochi secondi dall'assistente Gedosan su Telegram:
+                    %s
+                    """.formatted(telegramUrl);
+        }
+        return "";
+    }
+
+    private String corpoConferma(ConfermaPrenotazioneEmailPayload payload) {
         return """
                 Gentile %s,
 

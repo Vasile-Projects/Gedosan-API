@@ -5,7 +5,9 @@ import it.vszdev.gedosanapi.config.TimeConfig;
 import it.vszdev.gedosanapi.dto.PrenotazioneRequest;
 import it.vszdev.gedosanapi.dto.donatore.DatiDonatoreRequest;
 import it.vszdev.gedosanapi.dto.email.ConfermaPrenotazioneEmailPayload;
+import it.vszdev.gedosanapi.enums.CanalePrenotazione;
 import it.vszdev.gedosanapi.enums.Sesso;
+import it.vszdev.gedosanapi.enums.TipoDonazione;
 import it.vszdev.gedosanapi.events.PrenotazioneEffettuataEvent;
 import it.vszdev.gedosanapi.exception.RegolaPrenotazioneException;
 import it.vszdev.gedosanapi.exception.RisorsaNonTrovataException;
@@ -79,7 +81,29 @@ public class PrenotazioneService {
         ricalcolaPostiOccupati(slot);
         validaSlotPrenotabile(slot, donatore, null, flussoAdmin);
 
-        Prenotazione prenotazione = new Prenotazione(donatore, slot, request.tipoDonazione());
+        Prenotazione prenotazione = new Prenotazione(donatore, slot, request.tipoDonazione(),
+                flussoAdmin ? CanalePrenotazione.ADMIN : CanalePrenotazione.SITO);
+        prenotazioneRepository.save(prenotazione);
+        ricalcolaPostiOccupati(slot);
+
+        eventPublisher.publishEvent(new PrenotazioneEffettuataEvent(new ConfermaPrenotazioneEmailPayload(prenotazione)));
+
+        return prenotazione;
+    }
+
+    // Prenotazione dal bot Telegram: il donatore è già identificato dal collegamento della chat, quindi
+    // niente attesa né link via email, e l'anagrafica non si tocca. Stesse regole del flusso pubblico
+    // (anticipo minimo compreso) e stesso ordine dei lock: donatore -> slot.
+    @Transactional
+    public Prenotazione creaPrenotazioneDaBot(Long idDonatore, Long idSlot) {
+        Donatore donatore = donatoreService.bloccaPerPrenotazione(idDonatore);
+        SlotGiornaliero slot = slotGiornalieroRepository.findWithLockById(idSlot)
+                .orElseThrow(() -> new RisorsaNonTrovataException("Slot non trovato"));
+
+        ricalcolaPostiOccupati(slot);
+        validaSlotPrenotabile(slot, donatore, null, false);
+
+        Prenotazione prenotazione = new Prenotazione(donatore, slot, TipoDonazione.SI, CanalePrenotazione.TELEGRAM);
         prenotazioneRepository.save(prenotazione);
         ricalcolaPostiOccupati(slot);
 

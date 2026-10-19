@@ -31,14 +31,18 @@ public class GlobalExceptionHandler {
             Map.entry(CredenzialiNonValideException.class, new StatoErrore(HttpStatus.UNAUTHORIZED, "Non autorizzato")),
             Map.entry(RichiestaNonValidaException.class, new StatoErrore(HttpStatus.BAD_REQUEST, "Richiesta non valida")),
             Map.entry(RisorsaNonTrovataException.class, new StatoErrore(HttpStatus.NOT_FOUND, "Risorsa non trovata")),
-            Map.entry(RegolaPrenotazioneException.class, new StatoErrore(HttpStatus.CONFLICT, "Prenotazione non consentita"))
+            Map.entry(RegolaPrenotazioneException.class, new StatoErrore(HttpStatus.CONFLICT, "Prenotazione non consentita")),
+            Map.entry(ChatNonCollegataException.class, new StatoErrore(HttpStatus.FORBIDDEN, "Chat non collegata")),
+            Map.entry(TroppeRichiesteException.class, new StatoErrore(HttpStatus.TOO_MANY_REQUESTS, "Troppe richieste"))
     );
 
     @ExceptionHandler({
             CredenzialiNonValideException.class,
             RichiestaNonValidaException.class,
             RisorsaNonTrovataException.class,
-            RegolaPrenotazioneException.class
+            RegolaPrenotazioneException.class,
+            ChatNonCollegataException.class,
+            TroppeRichiesteException.class
     })
     public ResponseEntity<Errore> gestisciErroreApplicativo(RuntimeException ex, HttpServletRequest request) {
         StatoErrore statoErrore = ERRORI_APPLICATIVI.get(ex.getClass());

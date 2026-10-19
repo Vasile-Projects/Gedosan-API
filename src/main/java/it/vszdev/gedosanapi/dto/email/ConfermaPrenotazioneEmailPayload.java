@@ -1,5 +1,6 @@
 package it.vszdev.gedosanapi.dto.email;
 
+import it.vszdev.gedosanapi.enums.CanalePrenotazione;
 import it.vszdev.gedosanapi.enums.TipoDonazione;
 import it.vszdev.gedosanapi.models.Prenotazione;
 
@@ -16,7 +17,8 @@ public record ConfermaPrenotazioneEmailPayload(
         String telefonoTrasfusionale,
         LocalDate dataPrenotazione,
         LocalTime orarioPrenotazione,
-        TipoDonazione tipoDonazione
+        TipoDonazione tipoDonazione,
+        CanalePrenotazione canale
 ) {
     public ConfermaPrenotazioneEmailPayload(Prenotazione p) {
         this(
@@ -29,7 +31,8 @@ public record ConfermaPrenotazioneEmailPayload(
                 p.getSlotGiornaliero().getTrasfusionale().getTelefono(),
                 p.getSlotGiornaliero().getData(),
                 p.getSlotGiornaliero().getOrario().getOrario(),
-                p.getTipoDonazione()
+                p.getTipoDonazione(),
+                p.getCanale()
         );
     }
 }

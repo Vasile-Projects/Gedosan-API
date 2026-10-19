@@ -28,10 +28,25 @@ public class RateLimiterService {
     private static final int CONFERMA_MAX_RICHIESTE = 10;
     private static final Duration CONFERMA_FINESTRA = Duration.ofMinutes(1);
 
+    // Bot: richieste per chat Telegram (n8n chiama da un solo IP, il limite per IP non distingue gli utenti).
+    private static final int CHAT_MAX_RICHIESTE = 30;
+    private static final Duration CHAT_FINESTRA = Duration.ofMinutes(1);
+
+    // Richieste di codice di collegamento per chat: ognuna può far partire un'email.
+    private static final int CODICE_MAX_RICHIESTE = 3;
+    private static final Duration CODICE_FINESTRA = Duration.ofHours(1);
+
+    // Codici inviati allo stesso donatore, da qualunque chat: limita le email che chi conosce CF ed email
+    // di un altro può far arrivare nella sua casella.
+    private static final int CODICE_DONATORE_MAX_RICHIESTE = 3;
+
     private final Cache<String, Bucket> loginBuckets = costruisciCache(LOGIN_FINESTRA);
     private final Cache<String, Bucket> prenotazioneBuckets = costruisciCache(PRENOTAZIONE_FINESTRA);
     private final Cache<String, Bucket> consultazioneBuckets = costruisciCache(CONSULTAZIONE_FINESTRA);
     private final Cache<String, Bucket> confermaBuckets = costruisciCache(CONFERMA_FINESTRA);
+    private final Cache<String, Bucket> chatBuckets = costruisciCache(CHAT_FINESTRA);
+    private final Cache<String, Bucket> codiceBuckets = costruisciCache(CODICE_FINESTRA);
+    private final Cache<String, Bucket> codiceDonatoreBuckets = costruisciCache(CODICE_FINESTRA);
 
     public boolean tryConsumeLogin(String chiave) {
         return loginBuckets.get(chiave, k -> creaBucket(LOGIN_MAX_RICHIESTE, LOGIN_FINESTRA)).tryConsume(1);
@@ -47,6 +62,19 @@ public class RateLimiterService {
 
     public boolean tryConsumeConferma(String chiave) {
         return confermaBuckets.get(chiave, k -> creaBucket(CONFERMA_MAX_RICHIESTE, CONFERMA_FINESTRA)).tryConsume(1);
+    }
+
+    public boolean tryConsumeChat(long chatId) {
+        return chatBuckets.get(String.valueOf(chatId), k -> creaBucket(CHAT_MAX_RICHIESTE, CHAT_FINESTRA)).tryConsume(1);
+    }
+
+    public boolean tryConsumeCodiceCollegamento(long chatId) {
+        return codiceBuckets.get(String.valueOf(chatId), k -> creaBucket(CODICE_MAX_RICHIESTE, CODICE_FINESTRA)).tryConsume(1);
+    }
+
+    public boolean tryConsumeCodicePerDonatore(long idDonatore) {
+        return codiceDonatoreBuckets.get(String.valueOf(idDonatore),
+                k -> creaBucket(CODICE_DONATORE_MAX_RICHIESTE, CODICE_FINESTRA)).tryConsume(1);
     }
 
     private Cache<String, Bucket> costruisciCache(Duration finestra) {
