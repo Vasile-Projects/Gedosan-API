@@ -22,7 +22,7 @@ public class JwtService {
         this.chiave = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtProperties.getSecret()));
     }
 
-    // Subject = id admin, non username: lo schema DB è gestito a mano e l'unicità di username non è garantita.
+    // Subject = id admin, non username: l'id è la chiave stabile dell'account anche se lo username cambia.
     public TokenResponse generaToken(Long idAdmin) {
         Instant ora = Instant.now();
         Instant scadenza = ora.plusMillis(jwtProperties.getExpirationMs());
