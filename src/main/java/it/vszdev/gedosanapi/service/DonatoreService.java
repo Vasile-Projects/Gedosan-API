@@ -7,47 +7,52 @@ import it.vszdev.gedosanapi.models.Donatore;
 import it.vszdev.gedosanapi.repositories.DonatoreRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.util.function.Supplier;
 
 @Service
 public class DonatoreService {
 
     private final DonatoreRepository donatoreRepository;
+    private final TransactionTemplate nuovaTransazione;
 
-    public DonatoreService(DonatoreRepository donatoreRepository) {
+    public DonatoreService(DonatoreRepository donatoreRepository, PlatformTransactionManager transactionManager) {
         this.donatoreRepository = donatoreRepository;
+        this.nuovaTransazione = new TransactionTemplate(transactionManager);
+        this.nuovaTransazione.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     // Solo flusso admin (operatore fidato): un donatore esistente viene aggiornato con i dati inseriti.
     // Il flusso pubblico non passa di qui e non aggiorna mai un'anagrafica esistente (vedi creaDonatore).
     // Il match è sul codice fiscale, non sull'email: la stessa persona può tornare con contatti diversi.
-    // REQUIRES_NEW (come SlotGiornalieroService.risolviSlot): l'insert del donatore viene committato
-    // subito, così il vincolo uq_donatori_codice_fiscale fa da arbitro tra due prime prenotazioni
-    // concorrenti dello stesso CF e chi perde la corsa rilegge la riga altrui invece di ricevere un
-    // errore. Di conseguenza la risoluzione/aggiornamento dell'anagrafica persiste anche se la
-    // prenotazione successiva fallisce una validazione; un tentativo corretto successivo la riallinea.
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    // Transazione propria (vedi inNuovaTransazione): l'insert del donatore viene committato subito,
+    // così il vincolo uq_donatori_codice_fiscale fa da arbitro tra due prime prenotazioni concorrenti
+    // dello stesso CF e chi perde la corsa ritrova la riga altrui invece di ricevere un errore. Di
+    // conseguenza la risoluzione/aggiornamento dell'anagrafica persiste anche se la prenotazione
+    // successiva fallisce una validazione; un tentativo corretto successivo la riallinea.
     public Donatore risolviDonatore(DatiDonatoreRequest dati) {
         String codiceFiscale = Donatore.normalizzaCodiceFiscale(dati.codiceFiscale());
         String email = Donatore.normalizzaEmail(dati.email());
 
-        return donatoreRepository.findByCodiceFiscale(codiceFiscale)
+        return inNuovaTransazione(() -> donatoreRepository.findByCodiceFiscale(codiceFiscale)
                 .map(donatoreEsistente -> aggiornaDonatore(donatoreEsistente, dati, email))
-                .orElseGet(() -> creaDonatoreSicuro(dati, codiceFiscale, email));
+                .orElseGet(() -> inserisciDonatore(dati, codiceFiscale, email)));
     }
 
     // Flusso pubblico, alla conferma via email: crea il donatore se il CF non esiste. Mai aggiornamenti.
-    // Stessa REQUIRES_NEW di risolviDonatore, con il vincolo UNIQUE sul CF come arbitro: se un'altra
-    // richiesta crea lo stesso CF in parallelo si restituisce la riga altrui, e il chiamante verifica
-    // che l'email coincida prima di usarla.
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    // Stessa transazione propria di risolviDonatore, con il vincolo UNIQUE sul CF come arbitro: se
+    // un'altra richiesta crea lo stesso CF in parallelo si restituisce la riga altrui, e il chiamante
+    // verifica che l'email coincida prima di usarla.
     public Donatore creaDonatore(DatiDonatoreRequest dati) {
         String codiceFiscale = Donatore.normalizzaCodiceFiscale(dati.codiceFiscale());
         String email = Donatore.normalizzaEmail(dati.email());
 
-        return donatoreRepository.findByCodiceFiscale(codiceFiscale)
-                .orElseGet(() -> creaDonatoreSicuro(dati, codiceFiscale, email));
+        return inNuovaTransazione(() -> donatoreRepository.findByCodiceFiscale(codiceFiscale)
+                .orElseGet(() -> inserisciDonatore(dati, codiceFiscale, email)));
     }
 
     // Lock pessimistico sulla riga del donatore: serializza le prenotazioni concorrenti dello stesso
@@ -73,26 +78,32 @@ public class DonatoreService {
         return donatoreRepository.save(donatore);
     }
 
-    // Stesso pattern di SlotGiornalieroService.creaSlotSicuro: se due richieste concorrenti provano a
-    // creare lo stesso CF, il vincolo UNIQUE ne fa fallire una; chi perde rilegge la riga già creata.
-    private Donatore creaDonatoreSicuro(DatiDonatoreRequest dati, String codiceFiscale, String email) {
+    // Come SlotGiornalieroService.risolviSlot: REQUIRES_NEW, e se due richieste concorrenti creano lo
+    // stesso CF il vincolo UNIQUE ne fa fallire una. Chi perde non può rileggere nella stessa
+    // transazione (dopo l'eccezione la sessione di Hibernate è inutilizzabile): rollback e un secondo
+    // tentativo in una transazione nuova, che trova la riga del vincitore.
+    private Donatore inNuovaTransazione(Supplier<Donatore> operazione) {
+        try {
+            return nuovaTransazione.execute(stato -> operazione.get());
+        } catch (DataIntegrityViolationException e) {
+            return nuovaTransazione.execute(stato -> operazione.get());
+        }
+    }
+
+    private Donatore inserisciDonatore(DatiDonatoreRequest dati, String codiceFiscale, String email) {
         if (emailAppartieneAdAltroDonatore(email, null)) {
             throw new RegolaPrenotazioneException("L'email inserita è già associata a un altro donatore.");
         }
 
-        try {
-            return donatoreRepository.save(new Donatore(
-                    dati.nome(),
-                    dati.cognome(),
-                    dati.dataNascita(),
-                    dati.sesso(),
-                    codiceFiscale,
-                    dati.cellulare(),
-                    email,
-                    null));
-        } catch (DataIntegrityViolationException e) {
-            return donatoreRepository.findByCodiceFiscale(codiceFiscale).orElseThrow(() -> e);
-        }
+        return donatoreRepository.save(new Donatore(
+                dati.nome(),
+                dati.cognome(),
+                dati.dataNascita(),
+                dati.sesso(),
+                codiceFiscale,
+                dati.cellulare(),
+                email,
+                null));
     }
 
     private boolean emailAppartieneAdAltroDonatore(String email, Long idDonatoreCorrente) {
